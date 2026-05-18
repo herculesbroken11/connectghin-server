@@ -1,0 +1,18 @@
+{
+  "/_not-found/page": "/_not-found",
+  "/(auth)/login/page": "/login",
+  "/(protected)/audit-logs/page": "/audit-logs",
+  "/(protected)/player-ratings/page": "/player-ratings",
+  "/(protected)/dashboard/page": "/dashboard",
+  "/(protected)/settings/page": "/settings",
+  "/(protected)/player-ratings/[id]/page": "/player-ratings/[id]",
+  "/(protected)/subscriptions/[id]/page": "/subscriptions/[id]",
+  "/(protected)/player-ratings/reviews/[id]/page": "/player-ratings/reviews/[id]",
+  "/(protected)/subscriptions/page": "/subscriptions",
+  "/(protected)/reports/page": "/reports",
+  "/(protected)/users/page": "/users",
+  "/(protected)/reports/[id]/page": "/reports/[id]",
+  "/(protected)/verification/page": "/verification",
+  "/(protected)/users/[id]/page": "/users/[id]",
+  "/(protected)/verification/[id]/page": "/verification/[id]"
+}

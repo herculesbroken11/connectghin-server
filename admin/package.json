@@ -1,0 +1,26 @@
+{
+  "name": "connectghin-admin",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "node scripts/run-next.mjs dev",
+    "build": "node scripts/run-next.mjs build",
+    "start": "node scripts/run-next.mjs start"
+  },
+  "dependencies": {
+    "autoprefixer": "^10.5.0",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "lucide-react": "^1.14.0",
+    "next": "^15.0.0",
+    "postcss": "^8.5.13",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "3.4.17"
+  },
+  "devDependencies": {
+    "@types/node": "25.5.2",
+    "@types/react": "19.2.14",
+    "typescript": "6.0.2"
+  }
+}

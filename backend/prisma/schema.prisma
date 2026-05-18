@@ -1,0 +1,522 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum MembershipType {
+  FREE
+  PREMIUM
+}
+
+enum MembershipStatus {
+  NONE
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+enum UserLifecycleStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+  APPLE
+}
+
+enum VerificationStatus {
+  NOT_STARTED
+  PENDING
+  VERIFIED
+  REJECTED
+  APPEAL
+}
+
+enum SwipeAction {
+  LIKE
+  PASS
+}
+
+enum MessageType {
+  TEXT
+  SYSTEM
+  IMAGE
+}
+
+enum SubscriptionProvider {
+  APPLE_APP_STORE
+  GOOGLE_PLAY
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+  UNPAID
+}
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+}
+
+enum NotificationType {
+  NEW_MATCH
+  NEW_MESSAGE
+  GHIN_PENDING
+  GHIN_APPROVED
+  GHIN_REJECTED
+  SUBSCRIPTION_SUCCESS
+  SUBSCRIPTION_FAILED
+  SUBSCRIPTION_RENEWAL
+  SUBSCRIPTION_CANCELED
+  SYSTEM
+}
+
+enum DevicePlatform {
+  IOS
+  ANDROID
+  WEB
+}
+
+enum ReportStatus {
+  OPEN
+  REVIEWED
+  RESOLVED
+  DISMISSED
+}
+
+enum PlayerRatingStatus {
+  PENDING
+  APPROVED
+  FLAGGED
+  REMOVED
+}
+
+enum AdminActionType {
+  USER_SUSPEND
+  USER_RESTORE
+  USER_DELETE
+  GHIN_APPROVE
+  GHIN_REJECT
+  REPORT_REVIEW
+  REPORT_RESOLVE
+  SUBSCRIPTION_OVERRIDE
+  APP_SETTINGS_UPDATE
+  ADMIN_LOGIN
+}
+
+model User {
+  id                  String              @id @default(cuid())
+  email               String              @unique
+  passwordHash        String
+  username            String              @unique
+  role                UserRole            @default(USER)
+  membershipType      MembershipType      @default(FREE)
+  membershipStatus    MembershipStatus    @default(NONE)
+  refreshTokenVersion Int                 @default(0)
+  isEmailVerified     Boolean             @default(false)
+  lifecycleStatus     UserLifecycleStatus @default(ACTIVE)
+  deletedAt           DateTime?
+  isActive            Boolean             @default(true)
+  isSuspended         Boolean             @default(false)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  lastLoginAt         DateTime?
+  authProvider        AuthProvider        @default(EMAIL)
+
+  profile                Profile?
+  profilePhotos          ProfilePhoto[]
+  ghinRequests           GHINVerificationRequest[]
+  sentSwipes             Swipe[]                   @relation("SwipeFrom")
+  receivedSwipes         Swipe[]                   @relation("SwipeTo")
+  matchesAsOne           Match[]                   @relation("MatchUserOne")
+  matchesAsTwo           Match[]                   @relation("MatchUserTwo")
+  conversationMembers    ConversationParticipant[]
+  messages               Message[]
+  subscriptions          Subscription[]
+  paymentEvents          PaymentEvent[]
+  notifications          Notification[]
+  deviceTokens           DeviceToken[]
+  reportsMade            Report[]                  @relation("ReportsMade")
+  reportsReceived        Report[]                  @relation("ReportsReceived")
+  blocksCreated          Block[]                   @relation("Blocker")
+  blocksReceived         Block[]                   @relation("Blocked")
+  privacySettings        PrivacySettings?
+  userSettings           UserSettings?
+  adminAuditLogs         AdminAuditLog[]           @relation("AdminActor")
+  reviewedGhinRequests   GHINVerificationRequest[] @relation("GhinReviewedBy")
+  reviewedReports        Report[]                  @relation("ReportReviewedBy")
+  ratingsGiven           PlayerRatingReview[]      @relation("PlayerRatingReviewer")
+  ratingsReceived        PlayerRatingReview[]      @relation("PlayerRatingReviewee")
+  reviewedPlayerRatings  PlayerRatingReview[]      @relation("PlayerRatingReviewedByAdmin")
+  accountDeletionRequest AccountDeletionRequest?
+  forgotPasswordTokens  ForgotPasswordToken[]
+
+  @@index([membershipType, membershipStatus])
+  @@index([lifecycleStatus, isSuspended])
+}
+
+model ForgotPasswordToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model Profile {
+  id                       String   @id @default(cuid())
+  userId                   String   @unique
+  displayName              String
+  bio                      String?
+  age                      Int?
+  addressLine1             String?
+  city                     String?
+  state                    String?
+  postalCode               String?
+  country                  String?
+  locationLat              Decimal? @db.Decimal(10, 7)
+  locationLng              Decimal? @db.Decimal(10, 7)
+  handicap                 Decimal? @db.Decimal(4, 1)
+  homeCourse               String?
+  lookingFor               String?
+  drinkingPreference       String?
+  smokingPreference        String?
+  musicPreference          String?
+  gender                   String?
+  skillLevel               String?
+  playFrequency            String?
+  profileCompletionPercent Int      @default(0)
+  isGHINVerified           Boolean  @default(false)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([city, state, country])
+  @@index([isGHINVerified])
+}
+
+model ProfilePhoto {
+  id        String   @id @default(cuid())
+  userId    String
+  imageUrl  String
+  sortOrder Int      @default(0)
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, sortOrder])
+  @@index([userId, isPrimary])
+}
+
+model GHINVerificationRequest {
+  id                 String             @id @default(cuid())
+  userId             String
+  ghinNumber         String
+  submittedFirstName String?
+  submittedLastName  String?
+  handicapSnapshot   Decimal?           @db.Decimal(4, 1)
+  submittedAt       DateTime           @default(now())
+  status            VerificationStatus @default(PENDING)
+  reviewedAt        DateTime?
+  reviewedByAdminId String?
+  rejectionReason   String?
+  appealNote        String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  user            User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewedByAdmin User? @relation("GhinReviewedBy", fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([status, submittedAt])
+}
+
+model Swipe {
+  id         String      @id @default(cuid())
+  fromUserId String
+  toUserId   String
+  action     SwipeAction
+  createdAt  DateTime    @default(now())
+
+  fromUser User @relation("SwipeFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User @relation("SwipeTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@unique([fromUserId, toUserId])
+  @@index([toUserId, action])
+}
+
+model Match {
+  id          String   @id @default(cuid())
+  userOneId   String
+  userTwoId   String
+  isActive    Boolean  @default(true)
+  matchedAt   DateTime @default(now())
+  unmatchedAt DateTime?
+
+  userOne User @relation("MatchUserOne", fields: [userOneId], references: [id], onDelete: Cascade)
+  userTwo User @relation("MatchUserTwo", fields: [userTwoId], references: [id], onDelete: Cascade)
+
+  @@unique([userOneId, userTwoId])
+  @@index([isActive, matchedAt])
+}
+
+model Conversation {
+  id           String                    @id @default(cuid())
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@index([updatedAt])
+}
+
+model ConversationParticipant {
+  id             String   @id @default(cuid())
+  conversationId String
+  userId         String
+  joinedAt       DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId, conversationId])
+}
+
+model Message {
+  id             String      @id @default(cuid())
+  conversationId String
+  senderId       String
+  body           String
+  messageType    MessageType @default(TEXT)
+  isRead         Boolean     @default(false)
+  readAt         DateTime?
+  createdAt      DateTime    @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([conversationId, isRead])
+}
+
+model Subscription {
+  id                String               @id @default(cuid())
+  userId            String
+  provider          SubscriptionProvider
+  /// Apple original transaction id, Google purchase token, or other store-held external id.
+  storeExternalId   String?              @unique
+  /// Store product / SKU (e.g. App Store product id).
+  storeProductId     String?
+  planCode             String
+  billingCycle         BillingCycle
+  amount               Int?
+  currency             String?
+  status               SubscriptionStatus
+  trialStartAt         DateTime?
+  trialEndAt           DateTime?
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  canceledAt           DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentEvents PaymentEvent[]
+
+  @@index([userId, status])
+  @@index([status, provider, createdAt])
+}
+
+model PaymentEvent {
+  id               String   @id @default(cuid())
+  userId           String?
+  subscriptionId String?
+  idempotencyKey   String?  @unique
+  eventType        String
+  payloadJson      Json
+  createdAt        DateTime @default(now())
+
+  user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([eventType, createdAt])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  dataJson  Json?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+}
+
+model DeviceToken {
+  id        String         @id @default(cuid())
+  userId    String
+  platform  DevicePlatform
+  token     String
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, token])
+  @@index([token])
+}
+
+model Report {
+  id                String       @id @default(cuid())
+  reportedByUserId  String
+  targetUserId      String
+  reason            String
+  details           String?
+  adminNotes        String?
+  status            ReportStatus @default(OPEN)
+  createdAt         DateTime     @default(now())
+  reviewedAt        DateTime?
+  reviewedByAdminId String?
+
+  reportedBy      User  @relation("ReportsMade", fields: [reportedByUserId], references: [id], onDelete: Cascade)
+  targetUser      User  @relation("ReportsReceived", fields: [targetUserId], references: [id], onDelete: Cascade)
+  reviewedByAdmin User? @relation("ReportReviewedBy", fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([targetUserId, status])
+}
+
+model PlayerRatingReview {
+  id                String             @id @default(cuid())
+  reviewerUserId    String
+  revieweeUserId    String
+  roundDate         DateTime
+  submittedAt       DateTime           @default(now())
+  course            String
+  overallRating     Int
+  handicapAccuracy  Int
+  sportsmanship     Int
+  paceOfPlay        Int
+  wouldPlayAgain    Boolean
+  comment           String
+  status            PlayerRatingStatus @default(PENDING)
+  reportedReason    String?
+  adminNotes        String?
+  reviewedAt        DateTime?
+  reviewedByAdminId String?
+
+  reviewer        User  @relation("PlayerRatingReviewer", fields: [reviewerUserId], references: [id], onDelete: Cascade)
+  reviewee        User  @relation("PlayerRatingReviewee", fields: [revieweeUserId], references: [id], onDelete: Cascade)
+  reviewedByAdmin User? @relation("PlayerRatingReviewedByAdmin", fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([revieweeUserId, status, submittedAt])
+  @@index([reviewerUserId, submittedAt])
+  @@index([status, submittedAt])
+}
+
+model Block {
+  id            String   @id @default(cuid())
+  blockerUserId String
+  blockedUserId String
+  createdAt     DateTime @default(now())
+
+  blocker User @relation("Blocker", fields: [blockerUserId], references: [id], onDelete: Cascade)
+  blocked User @relation("Blocked", fields: [blockedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerUserId, blockedUserId])
+  @@index([blockedUserId])
+}
+
+model PrivacySettings {
+  id                         String   @id @default(cuid())
+  userId                     String   @unique
+  showInDiscovery            Boolean  @default(true)
+  showDistance               Boolean  @default(true)
+  showOnlineStatus           Boolean  @default(true)
+  showLastActive             Boolean  @default(false)
+  allowMessagesFromMatches   Boolean  @default(true)
+  showReadReceipts           Boolean  @default(true)
+  updatedAt                  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserSettings {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  pushEnabled      Boolean  @default(true)
+  emailEnabled     Boolean  @default(true)
+  marketingEnabled Boolean  @default(false)
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AdminAuditLog {
+  id           String          @id @default(cuid())
+  adminUserId  String
+  actionType   AdminActionType
+  targetUserId String?
+  metadataJson Json?
+  createdAt    DateTime        @default(now())
+
+  adminUser User @relation("AdminActor", fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@index([actionType, createdAt])
+  @@index([adminUserId, createdAt])
+}
+
+model AppSettings {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  valueJson Json
+  updatedAt DateTime @updatedAt
+}
+
+model AccountDeletionRequest {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  reason      String?
+  requestedAt DateTime @default(now())
+  processedAt DateTime?
+  status      String   @default("PENDING")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, requestedAt])
+}

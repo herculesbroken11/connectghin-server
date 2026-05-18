@@ -1,0 +1,18 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/(auth)/login/page": "app/(auth)/login/page.js",
+  "/(protected)/audit-logs/page": "app/(protected)/audit-logs/page.js",
+  "/(protected)/player-ratings/page": "app/(protected)/player-ratings/page.js",
+  "/(protected)/dashboard/page": "app/(protected)/dashboard/page.js",
+  "/(protected)/settings/page": "app/(protected)/settings/page.js",
+  "/(protected)/player-ratings/[id]/page": "app/(protected)/player-ratings/[id]/page.js",
+  "/(protected)/subscriptions/[id]/page": "app/(protected)/subscriptions/[id]/page.js",
+  "/(protected)/player-ratings/reviews/[id]/page": "app/(protected)/player-ratings/reviews/[id]/page.js",
+  "/(protected)/subscriptions/page": "app/(protected)/subscriptions/page.js",
+  "/(protected)/reports/page": "app/(protected)/reports/page.js",
+  "/(protected)/users/page": "app/(protected)/users/page.js",
+  "/(protected)/reports/[id]/page": "app/(protected)/reports/[id]/page.js",
+  "/(protected)/verification/page": "app/(protected)/verification/page.js",
+  "/(protected)/users/[id]/page": "app/(protected)/users/[id]/page.js",
+  "/(protected)/verification/[id]/page": "app/(protected)/verification/[id]/page.js"
+}

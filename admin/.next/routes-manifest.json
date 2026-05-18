@@ -1,0 +1,168 @@
+{
+  "version": 3,
+  "pages404": true,
+  "caseSensitive": false,
+  "basePath": "",
+  "redirects": [
+    {
+      "source": "/:path+/",
+      "destination": "/:path+",
+      "internal": true,
+      "statusCode": 308,
+      "regex": "^(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))/$"
+    },
+    {
+      "source": "/ghin",
+      "destination": "/verification",
+      "statusCode": 307,
+      "regex": "^(?!/_next)/ghin(?:/)?$"
+    },
+    {
+      "source": "/ghin/:id",
+      "destination": "/verification/:id",
+      "statusCode": 307,
+      "regex": "^(?!/_next)/ghin(?:/([^/]+?))(?:/)?$"
+    },
+    {
+      "source": "/app-settings",
+      "destination": "/settings",
+      "statusCode": 307,
+      "regex": "^(?!/_next)/app-settings(?:/)?$"
+    }
+  ],
+  "headers": [],
+  "rewrites": {
+    "beforeFiles": [],
+    "afterFiles": [],
+    "fallback": []
+  },
+  "dynamicRoutes": [
+    {
+      "page": "/player-ratings/reviews/[id]",
+      "regex": "^/player\\-ratings/reviews/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/player\\-ratings/reviews/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/player-ratings/[id]",
+      "regex": "^/player\\-ratings/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/player\\-ratings/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/reports/[id]",
+      "regex": "^/reports/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/reports/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/subscriptions/[id]",
+      "regex": "^/subscriptions/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/subscriptions/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/users/[id]",
+      "regex": "^/users/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/users/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/verification/[id]",
+      "regex": "^/verification/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/verification/(?<nxtPid>[^/]+?)(?:/)?$"
+    }
+  ],
+  "staticRoutes": [
+    {
+      "page": "/_not-found",
+      "regex": "^/_not\\-found(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/audit-logs",
+      "regex": "^/audit\\-logs(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/audit\\-logs(?:/)?$"
+    },
+    {
+      "page": "/dashboard",
+      "regex": "^/dashboard(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard(?:/)?$"
+    },
+    {
+      "page": "/login",
+      "regex": "^/login(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/login(?:/)?$"
+    },
+    {
+      "page": "/player-ratings",
+      "regex": "^/player\\-ratings(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/player\\-ratings(?:/)?$"
+    },
+    {
+      "page": "/reports",
+      "regex": "^/reports(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/reports(?:/)?$"
+    },
+    {
+      "page": "/settings",
+      "regex": "^/settings(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/settings(?:/)?$"
+    },
+    {
+      "page": "/subscriptions",
+      "regex": "^/subscriptions(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/subscriptions(?:/)?$"
+    },
+    {
+      "page": "/users",
+      "regex": "^/users(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/users(?:/)?$"
+    },
+    {
+      "page": "/verification",
+      "regex": "^/verification(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/verification(?:/)?$"
+    }
+  ],
+  "dataRoutes": [],
+  "rsc": {
+    "header": "rsc",
+    "varyHeader": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+    "prefetchHeader": "next-router-prefetch",
+    "didPostponeHeader": "x-nextjs-postponed",
+    "contentTypeHeader": "text/x-component",
+    "suffix": ".rsc",
+    "prefetchSuffix": ".prefetch.rsc",
+    "prefetchSegmentHeader": "next-router-segment-prefetch",
+    "prefetchSegmentSuffix": ".segment.rsc",
+    "prefetchSegmentDirSuffix": ".segments"
+  },
+  "rewriteHeaders": {
+    "pathHeader": "x-nextjs-rewritten-path",
+    "queryHeader": "x-nextjs-rewritten-query"
+  }
+}

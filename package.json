@@ -1,0 +1,22 @@
+{
+  "name": "connectghin-app",
+  "private": true,
+  "description": "Monorepo root: run `npm install` here for one hoisted node_modules (admin + backend). Flutter app is connectghin_flutter — use flutter pub get there (not an npm workspace).",
+  "workspaces": [
+    "admin",
+    "backend"
+  ],
+  "scripts": {
+    "dev:backend": "npm run start:dev -w connectghin-backend",
+    "build:backend": "npm run build -w connectghin-backend",
+    "dev:admin": "npm run dev -w connectghin-admin",
+    "build:admin": "npm run build -w connectghin-admin",
+    "prisma:generate": "npm run prisma:generate -w connectghin-backend",
+    "prisma:migrate": "npm run prisma:migrate -w connectghin-backend",
+    "prisma:seed": "npm run prisma:seed -w connectghin-backend",
+    "bootstrap": "npm install && npm run prisma:generate -w connectghin-backend"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
