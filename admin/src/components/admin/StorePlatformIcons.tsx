@@ -11,7 +11,11 @@ export function AppleGlyph({ className }: { className?: string }) {
 
 /** Android platform icon used for Google Play / Android subscription rows. */
 export function GooglePlayGlyph({ className }: { className?: string }) {
-  return <img className={className} src="/icons/android.png" alt="" aria-hidden />;
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M7.575 4.58 5.78 1.47a.48.48 0 0 1 .18-.66.48.48 0 0 1 .66.18l1.82 3.15A8.35 8.35 0 0 1 12 3.35c1.28 0 2.49.28 3.56.79l1.82-3.15a.48.48 0 0 1 .66-.18.48.48 0 0 1 .18.66l-1.795 3.11C18.6 5.84 20.05 7.94 20.25 10.3H3.75c.2-2.36 1.65-4.46 3.825-5.72ZM8.5 8.25a.9.9 0 1 0 0-1.8.9.9 0 0 0 0 1.8Zm7 0a.9.9 0 1 0 0-1.8.9.9 0 0 0 0 1.8ZM3.75 11.45h16.5v6.15c0 .9-.72 1.62-1.62 1.62H17.2v2.17a1.36 1.36 0 1 1-2.72 0v-2.17H9.52v2.17a1.36 1.36 0 1 1-2.72 0v-2.17H5.37c-.9 0-1.62-.72-1.62-1.62v-6.15Zm-2.35.45a1.4 1.4 0 0 1 2.8 0v5.18a1.4 1.4 0 0 1-2.8 0V11.9Zm18.4 0a1.4 1.4 0 1 1 2.8 0v5.18a1.4 1.4 0 1 1-2.8 0V11.9Z" />
+    </svg>
+  );
 }
 
 export type StoreProvider = 'APPLE_APP_STORE' | 'GOOGLE_PLAY' | string;
@@ -53,7 +57,7 @@ export function PlatformTableCell({
       <span
         className={clsx(
           'flex h-8 w-8 shrink-0 items-center justify-center rounded-full shadow-sm ring-1 ring-black/5 dark:ring-white/10',
-          isApple ? 'bg-white text-[#1d1d1f] dark:bg-gray-900 dark:text-white' : 'bg-white dark:bg-gray-900',
+          'bg-white text-[#1d1d1f] dark:bg-gray-900 dark:text-white',
         )}
       >
         {isApple ? (
