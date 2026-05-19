@@ -9,14 +9,9 @@ export function AppleGlyph({ className }: { className?: string }) {
   );
 }
 
-/** Google Play–style badge (simplified; not an official Google trademark asset). */
+/** Android platform icon used for Google Play / Android subscription rows. */
 export function GooglePlayGlyph({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" aria-hidden>
-      <circle cx="12" cy="12" r="11" fill="#01875f" />
-      <path fill="#ffffff" d="M9.5 7.5 9.5 16.5 16.5 12 9.5 7.5z" />
-    </svg>
-  );
+  return <img className={className} src="/icons/android.png" alt="" aria-hidden />;
 }
 
 export type StoreProvider = 'APPLE_APP_STORE' | 'GOOGLE_PLAY' | string;
