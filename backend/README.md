@@ -17,8 +17,8 @@
 Typical local values in `backend/.env`:
 
 - `DATABASE_URL="postgresql://postgres:postgres@localhost:5432/connectghin?schema=public"`
-- `JWT_ACCESS_SECRET="replace-me"`
-- `JWT_REFRESH_SECRET="replace-me-too"`
+- `JWT_ACCESS_SECRET="<generate with: openssl rand -base64 48>"`
+- `JWT_REFRESH_SECRET="<generate with: openssl rand -base64 48>"`
 - `APP_PUBLIC_URL="http://localhost:5173"`
 - `APP_WEB_URL="http://localhost:5173"`
 
