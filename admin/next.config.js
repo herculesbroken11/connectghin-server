@@ -3,6 +3,7 @@ const path = require('path');
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  allowedDevOrigins: ['admin.connectghin.com'],
   // Monorepo: hoisted `next` is often under repo root `node_modules`.
   turbopack: {
     root: path.join(__dirname, '..'),

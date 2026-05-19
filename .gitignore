@@ -23,6 +23,7 @@ build/
 coverage/
 admin/dist/
 admin/build/
+admin/.next/
 backend/dist/
 backend/build/
 
