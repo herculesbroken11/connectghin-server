@@ -19,10 +19,21 @@ Typical local values in `backend/.env`:
 - `DATABASE_URL="postgresql://postgres:postgres@localhost:5432/connectghin?schema=public"`
 - `JWT_ACCESS_SECRET="<generate with: openssl rand -base64 48>"`
 - `JWT_REFRESH_SECRET="<generate with: openssl rand -base64 48>"`
+- `GOOGLE_OAUTH_CLIENT_ID="<Google OAuth Web client ID>"`
 - `APP_PUBLIC_URL="http://localhost:5173"`
 - `APP_WEB_URL="http://localhost:5173"`
 
 For Flutter clients, make sure backend CORS allows your app origin as needed via `CORS_ORIGIN` (or leave unset for local open CORS).
+
+## Google Sign-In
+
+Google login and signup use the same backend endpoint (`POST /auth/google`). For Android emulator testing:
+
+- Set backend `GOOGLE_OAUTH_CLIENT_ID` to the Google OAuth Web client ID.
+- Run Flutter with the same value as `GOOGLE_SERVER_CLIENT_ID`.
+- Add an Android OAuth client in Google Cloud Console for package `com.connectghin.app`.
+- Use the debug SHA-1 from `cd connectghin-mobile/android && ./gradlew signingReport`.
+- The Android emulator must be a Google APIs / Play Store image with Google Play services.
 
 ## API Base
 

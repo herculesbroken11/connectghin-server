@@ -1,4 +1,4 @@
-import { IsEmail, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class RegisterDto {
   @IsEmail()
@@ -68,6 +68,7 @@ export class AppleLoginDto {
   @IsString()
   idToken!: string;
 
-  @IsString()
+  @IsOptional()
+  @IsEmail()
   email?: string;
 }

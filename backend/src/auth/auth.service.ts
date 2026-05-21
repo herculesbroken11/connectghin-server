@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { AuthProvider, UserLifecycleStatus, UserRole } from '@prisma/client';
@@ -89,16 +94,13 @@ export class AuthService {
     }
     const audience = this.config.get<string>('GOOGLE_OAUTH_CLIENT_ID')?.trim();
     if (!audience) {
-      throw new BadRequestException('Missing GOOGLE_OAUTH_CLIENT_ID');
+      throw new ServiceUnavailableException('Google sign-in is not available right now. Please use email login.');
     }
-    const ticket = await this.googleClient.verifyIdToken({
-      idToken: rawToken,
-      audience,
-    });
+    const ticket = await this.verifyGoogleIdToken(rawToken, audience);
     const payload = ticket.getPayload();
     const email = payload?.email?.toLowerCase();
     if (!email) {
-      throw new UnauthorizedException('Google token missing email');
+      throw new UnauthorizedException('Google sign-in did not return an email address.');
     }
 
     let user = await this.prisma.user.findUnique({ where: { email } });
@@ -154,7 +156,7 @@ export class AuthService {
       .map((v) => v.trim())
       .filter(Boolean);
     if (!audiences.length) {
-      throw new BadRequestException('Missing APPLE_OAUTH_AUDIENCE');
+      throw new ServiceUnavailableException('Apple sign-in is not available right now. Please use email login.');
     }
 
     let claimsEmail: string | null = null;
@@ -175,13 +177,13 @@ export class AuthService {
       }
     }
     if (!matchedAudience) {
-      throw new UnauthorizedException('Invalid Apple token');
+      throw new UnauthorizedException('Apple sign-in failed. Please try again.');
     }
 
     const fallbackEmail = dto.email?.trim().toLowerCase() || null;
     const email = claimsEmail || fallbackEmail;
     if (!email) {
-      throw new UnauthorizedException('Apple token missing email');
+      throw new UnauthorizedException('Apple sign-in did not return an email address.');
     }
 
     let user = await this.prisma.user.findUnique({ where: { email } });
@@ -433,6 +435,17 @@ export class AuthService {
       if (!existing) return candidate;
       i += 1;
       candidate = `${base}${i}`;
+    }
+  }
+
+  private async verifyGoogleIdToken(rawToken: string, audience: string) {
+    try {
+      return await this.googleClient.verifyIdToken({
+        idToken: rawToken,
+        audience,
+      });
+    } catch {
+      throw new UnauthorizedException('Google sign-in failed. Please try again.');
     }
   }
 }
