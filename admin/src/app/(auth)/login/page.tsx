@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Shield } from 'lucide-react';
+import Image from 'next/image';
 
 import { adminLogin, fetchAdminPublicConfig } from '../../../lib/api';
 
@@ -38,11 +38,16 @@ export default function AdminLoginPage() {
           }
         }}
       >
-        <div className="mb-6 flex items-center gap-3">
-          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-connect-700 text-white dark:bg-connect-600">
-            <Shield size={24} />
-          </span>
-          <div>
+        <div className="mb-6 flex flex-col items-center text-center sm:flex-row sm:items-center sm:text-left">
+          <Image
+            src="/connectghin-logo.png"
+            alt="ConnectGHIN"
+            width={200}
+            height={80}
+            className="h-auto w-44 shrink-0 object-contain"
+            priority
+          />
+          <div className="mt-4 sm:mt-0 sm:ml-4">
             <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
               {brandName === null ? 'Admin panel' : `${brandName} Admin`}
             </h1>

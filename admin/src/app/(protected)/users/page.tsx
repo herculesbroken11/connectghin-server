@@ -240,10 +240,10 @@ export default function UsersPage() {
   const signInFilterDefs = useMemo(
     () =>
       [
-        { id: '' as const, label: 'All sign-in', count: summary?.totalUsers },
-        { id: 'EMAIL' as const, label: 'Email', count: summary?.emailSignInUsers },
-        { id: 'GOOGLE' as const, label: 'Google', count: summary?.googleSignInUsers },
-        { id: 'APPLE' as const, label: 'Apple', count: summary?.appleSignInUsers },
+        { id: '' as const, label: 'All sign-in', count: summary?.totalUsers ?? 0 },
+        { id: 'EMAIL' as const, label: 'Email', count: summary?.emailSignInUsers ?? 0 },
+        { id: 'GOOGLE' as const, label: 'Google', count: summary?.googleSignInUsers ?? 0 },
+        { id: 'APPLE' as const, label: 'Apple', count: summary?.appleSignInUsers ?? 0 },
       ] as const,
     [summary],
   );

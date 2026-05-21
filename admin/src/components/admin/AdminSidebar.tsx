@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -96,6 +97,13 @@ export function AdminSidebar() {
               isCollapsed ? 'lg:pointer-events-none lg:w-0 lg:overflow-hidden lg:opacity-0' : 'opacity-100',
             )}
           >
+            <Image
+              src="/connectghin-logo.png"
+              alt="ConnectGHIN"
+              width={160}
+              height={56}
+              className="mb-2 h-10 w-auto object-contain object-left"
+            />
             <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
               {brandName === null ? '…' : brandName}
             </h1>
