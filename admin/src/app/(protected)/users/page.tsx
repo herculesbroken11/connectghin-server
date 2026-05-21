@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, Columns3, Search as SearchIcon } from 'lucid
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 
+import { AuthSignInBadge } from '../../../components/admin/AuthSignInBadge';
 import { AdminPageShell } from '../../../components/admin/AdminPageShell';
 import { useAdminUiCopy } from '../../../context/AdminUiCopyContext';
 import { adminApi } from '../../../lib/api';
@@ -20,6 +21,9 @@ type UsersSummary = {
   premiumUsers: number;
   freeUsers: number;
   verifiedProfiles: number;
+  emailSignInUsers: number;
+  googleSignInUsers: number;
+  appleSignInUsers: number;
 };
 
 type ProfileLite = {
@@ -102,28 +106,6 @@ function ghinBadge(profile: ProfileLite, lastGhin: UserRow['lastGhinRequest']) {
 }
 
 type AuthProviderFilter = '' | 'EMAIL' | 'GOOGLE' | 'APPLE';
-
-function signInBadge(provider: string | undefined): { label: string; className: string } | null {
-  switch (provider) {
-    case 'GOOGLE':
-      return {
-        label: 'Google',
-        className: 'bg-blue-50 text-blue-800 dark:bg-blue-900/40 dark:text-blue-100',
-      };
-    case 'APPLE':
-      return {
-        label: 'Apple',
-        className: 'bg-gray-800 text-white dark:bg-gray-600 dark:text-white',
-      };
-    case 'EMAIL':
-      return {
-        label: 'Email',
-        className: 'bg-violet-50 text-violet-800 dark:bg-violet-900/40 dark:text-violet-100',
-      };
-    default:
-      return null;
-  }
-}
 
 export default function UsersPage() {
   const router = useRouter();
@@ -250,6 +232,22 @@ export default function UsersPage() {
     setSegment(s);
   }, []);
 
+  const setAuthProviderAndReset = useCallback((ap: AuthProviderFilter) => {
+    setPage(0);
+    setAuthProviderFilter(ap);
+  }, []);
+
+  const signInFilterDefs = useMemo(
+    () =>
+      [
+        { id: '' as const, label: 'All sign-in', count: summary?.totalUsers },
+        { id: 'EMAIL' as const, label: 'Email', count: summary?.emailSignInUsers },
+        { id: 'GOOGLE' as const, label: 'Google', count: summary?.googleSignInUsers },
+        { id: 'APPLE' as const, label: 'Apple', count: summary?.appleSignInUsers },
+      ] as const,
+    [summary],
+  );
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const toggleColumn = (k: ColumnKey) => {
@@ -271,6 +269,30 @@ export default function UsersPage() {
                 className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition ${
                   active
                     ? 'border-connect-600 bg-connect-600 text-white shadow-sm dark:border-connect-500 dark:bg-connect-600'
+                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500'
+                }`}
+              >
+                {c.label}
+                {c.count !== undefined && (
+                  <span className={active ? 'text-white/90' : 'text-gray-500 dark:text-gray-400'}>({c.count})</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Sign-in:</span>
+          {signInFilterDefs.map((c) => {
+            const active = authProviderFilter === c.id;
+            return (
+              <button
+                key={c.id || 'all'}
+                type="button"
+                onClick={() => setAuthProviderAndReset(c.id)}
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition ${
+                  active
+                    ? 'border-blue-600 bg-blue-600 text-white shadow-sm dark:border-blue-500 dark:bg-blue-600'
                     : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500'
                 }`}
               >
@@ -406,7 +428,6 @@ export default function UsersPage() {
               {users.map((user) => {
                 const display = user.profile?.displayName?.trim() || user.username;
                 const ghin = ghinBadge(user.profile, user.lastGhinRequest);
-                const signIn = signInBadge(user.authProvider);
                 const loc =
                   [user.profile?.city, user.profile?.state].filter(Boolean).join(', ') || '—';
                 const hc =
@@ -429,13 +450,9 @@ export default function UsersPage() {
                               {display}
                             </span>
                             <span className="text-xs text-gray-500 dark:text-gray-400">@{user.username}</span>
-                            {signIn && (
-                              <span
-                                className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${signIn.className}`}
-                              >
-                                {signIn.label}
-                              </span>
-                            )}
+                            <span className="mt-1 block">
+                              <AuthSignInBadge provider={user.authProvider} compact />
+                            </span>
                           </span>
                         </Link>
                       </td>

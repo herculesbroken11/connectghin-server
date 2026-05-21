@@ -27,7 +27,9 @@ For Flutter clients, make sure backend CORS allows your app origin as needed via
 
 ## Google Sign-In
 
-Google login and signup use the same backend endpoint (`POST /auth/google`). For Android emulator testing:
+Google login and signup use the same backend endpoint (`POST /auth/google`). The admin API exposes sign-in counts on `GET /admin/users/summary` (`googleSignInUsers`, `appleSignInUsers`, `emailSignInUsers`) for the Users screen.
+
+For Android emulator testing:
 
 - Set backend `GOOGLE_OAUTH_CLIENT_ID` to the Google OAuth Web client ID.
 - Run Flutter with the same value as `GOOGLE_SERVER_CLIENT_ID`.

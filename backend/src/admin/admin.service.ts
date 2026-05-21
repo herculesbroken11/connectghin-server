@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import {
   AdminActionType,
+  AuthProvider,
   BillingCycle,
   MembershipType,
   PlayerRatingStatus,
@@ -327,6 +328,9 @@ export class AdminService {
     premiumUsers: number;
     freeUsers: number;
     verifiedProfiles: number;
+    emailSignInUsers: number;
+    googleSignInUsers: number;
+    appleSignInUsers: number;
   }> {
     const [
       totalUsers,
@@ -335,6 +339,9 @@ export class AdminService {
       premiumUsers,
       freeUsers,
       verifiedProfiles,
+      emailSignInUsers,
+      googleSignInUsers,
+      appleSignInUsers,
     ] = await Promise.all([
       this.prisma.user.count({ where: this.notDeletedUser }),
       this.prisma.user.count({
@@ -346,6 +353,15 @@ export class AdminService {
       this.prisma.profile.count({
         where: { isGHINVerified: true, user: { is: this.notDeletedUser } },
       }),
+      this.prisma.user.count({
+        where: { ...this.notDeletedUser, authProvider: AuthProvider.EMAIL },
+      }),
+      this.prisma.user.count({
+        where: { ...this.notDeletedUser, authProvider: AuthProvider.GOOGLE },
+      }),
+      this.prisma.user.count({
+        where: { ...this.notDeletedUser, authProvider: AuthProvider.APPLE },
+      }),
     ]);
     return {
       totalUsers,
@@ -354,6 +370,9 @@ export class AdminService {
       premiumUsers,
       freeUsers,
       verifiedProfiles,
+      emailSignInUsers,
+      googleSignInUsers,
+      appleSignInUsers,
     };
   }
 

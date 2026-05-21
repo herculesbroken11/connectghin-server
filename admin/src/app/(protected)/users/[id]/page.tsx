@@ -23,6 +23,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 
+import { AuthSignInBadge, authSignInLabel } from '../../../../components/admin/AuthSignInBadge';
 import { AdminPageShell } from '../../../../components/admin/AdminPageShell';
 import { useToast } from '../../../../context/ToastContext';
 import { adminApi } from '../../../../lib/api';
@@ -110,19 +111,6 @@ function ghinLabel(profile: ProfileDetail, latest: GhinRequest): string {
   const st = latest?.status;
   if (st === 'PENDING' || st === 'APPEAL') return 'Pending';
   return 'Not started';
-}
-
-function signInMethodLabel(p: string | undefined): string {
-  switch (p) {
-    case 'GOOGLE':
-      return 'Google Sign-In';
-    case 'APPLE':
-      return 'Apple Sign-In';
-    case 'EMAIL':
-      return 'Email & password';
-    default:
-      return '—';
-  }
 }
 
 /** When `NEXT_PUBLIC_PUBLIC_PROFILE_URL` is set, build a link (supports `{{username}}` in the template). */
@@ -271,6 +259,7 @@ export default function UserDetailPage() {
                     >
                       {user.membershipType === 'PREMIUM' ? 'Premium' : 'Free'}
                     </span>
+                    <AuthSignInBadge provider={user.authProvider} />
                     <span
                       className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                         user.isSuspended
@@ -592,8 +581,13 @@ export default function UserDetailPage() {
                   </div>
                   <div className="flex justify-between gap-4">
                     <dt className="text-gray-500 dark:text-gray-400">Sign-in method</dt>
-                    <dd className="text-right font-medium text-gray-900 dark:text-white">
-                      {signInMethodLabel(user.authProvider)}
+                    <dd className="text-right">
+                      <span className="block font-medium text-gray-900 dark:text-white">
+                        {authSignInLabel(user.authProvider)}
+                      </span>
+                      <span className="mt-1 inline-flex justify-end">
+                        <AuthSignInBadge provider={user.authProvider} />
+                      </span>
                     </dd>
                   </div>
                   <div className="flex justify-between gap-4">
