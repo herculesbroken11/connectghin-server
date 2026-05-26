@@ -55,7 +55,10 @@ export class NotificationsService {
         dataJson: dataJson ?? undefined,
       },
     });
-    const pushData = flattenDataJsonForFcm(dataJson);
+    const pushData = {
+      type,
+      ...flattenDataJsonForFcm(dataJson),
+    };
     await this.pushService.sendToUser(userId, title, body, pushData);
   }
 }
