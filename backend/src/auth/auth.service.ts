@@ -92,11 +92,7 @@ export class AuthService {
     if (!rawToken) {
       throw new BadRequestException('Google idToken is required');
     }
-    const audience = this.config.get<string>('GOOGLE_OAUTH_CLIENT_ID')?.trim();
-    if (!audience) {
-      throw new ServiceUnavailableException('Google sign-in is not available right now. Please use email login.');
-    }
-    const ticket = await this.verifyGoogleIdToken(rawToken, audience);
+    const ticket = await this.verifyGoogleIdToken(rawToken);
     const payload = ticket.getPayload();
     const email = payload?.email?.toLowerCase();
     if (!email) {
@@ -438,15 +434,27 @@ export class AuthService {
     }
   }
 
-  private async verifyGoogleIdToken(rawToken: string, audience: string) {
-    try {
-      return await this.googleClient.verifyIdToken({
-        idToken: rawToken,
-        audience,
-      });
-    } catch {
-      throw new UnauthorizedException('Google sign-in failed. Please try again.');
+  private async verifyGoogleIdToken(rawToken: string) {
+    const audiences = [
+      this.config.get<string>('GOOGLE_OAUTH_CLIENT_ID'),
+      this.config.get<string>('GOOGLE_ANDROID_CLIENT_ID'),
+    ]
+      .map((v) => v?.trim())
+      .filter((v): v is string => Boolean(v));
+    if (audiences.length === 0) {
+      throw new ServiceUnavailableException('Google sign-in is not available right now. Please use email login.');
     }
+    for (const audience of audiences) {
+      try {
+        return await this.googleClient.verifyIdToken({
+          idToken: rawToken,
+          audience,
+        });
+      } catch {
+        // try next audience (Web vs Android client id)
+      }
+    }
+    throw new UnauthorizedException('Google sign-in failed. Please try again.');
   }
 }
 
