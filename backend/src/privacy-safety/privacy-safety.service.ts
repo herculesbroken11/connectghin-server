@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { normalizeProfilePhotoUrl } from '../common/utils/profile-photo-url';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -64,7 +65,7 @@ export class PrivacySafetyService {
         createdAt: r.createdAt.toISOString(),
         displayName,
         username: u.username,
-        photoUrl: u.profilePhotos[0]?.imageUrl ?? null,
+        photoUrl: normalizeProfilePhotoUrl(u.profilePhotos[0]?.imageUrl),
       };
     });
   }

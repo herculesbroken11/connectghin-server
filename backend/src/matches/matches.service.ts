@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { normalizeUserProfilePhotos } from '../common/utils/profile-photo-url';
 import { PrismaService } from '../prisma/prisma.service';
 
 type PeerChatInfo = {
@@ -48,6 +49,8 @@ export class MatchesService {
       const chat = peerIndex.get(peerId);
       return {
         ...m,
+        userOne: normalizeUserProfilePhotos(m.userOne) ?? m.userOne,
+        userTwo: normalizeUserProfilePhotos(m.userTwo) ?? m.userTwo,
         chatPreview: {
           conversationId: chat?.conversationId ?? null,
           lastMessagePreview: chat?.preview ?? null,

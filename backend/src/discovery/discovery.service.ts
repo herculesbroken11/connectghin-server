@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma, UserLifecycleStatus } from '@prisma/client';
 
 import { DiscoveryQueryDto } from '../common/dto/pagination.dto';
+import { normalizeProfileRow } from '../common/utils/profile-photo-url';
 import { PrismaService } from '../prisma/prisma.service';
 
 function toNumber(v: unknown): number | null {
@@ -110,7 +111,7 @@ export class DiscoveryService {
         viewerLat != null && viewerLng != null && lat != null && lng != null
           ? Number(haversineMiles(viewerLat, viewerLng, lat, lng).toFixed(1))
           : null;
-      return { ...row, distanceMiles };
+      return { ...normalizeProfileRow(row), distanceMiles };
     });
   }
 }

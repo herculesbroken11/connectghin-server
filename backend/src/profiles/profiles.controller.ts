@@ -24,6 +24,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { SuspendedUserGuard } from '../common/guards/suspended-user.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { AddPhotoDto, UpdateProfileDto } from './profiles.dto';
+import { normalizeProfilePhotoUrl } from '../common/utils/profile-photo-url';
 import { ProfilesService } from './profiles.service';
 
 type AuthedRequest = Request & { user: { sub: string } };
@@ -101,6 +102,7 @@ export class ProfilesController {
         'Image file is required (field name: file). Use a .jpg, .png, .webp, or .gif image.',
       );
     }
+    const filename = file.filename;
     const forwarded = req.headers['x-forwarded-proto'];
     const proto =
       typeof forwarded === 'string'
@@ -109,11 +111,15 @@ export class ProfilesController {
           ? forwarded[0]!.trim()
           : req.protocol;
     const host = req.get('host');
-    if (!host) {
-      throw new BadRequestException('Cannot determine public host for image URL');
+    const fallbackBase = host ? `${proto}://${host}` : null;
+    const publicBase =
+      process.env.API_PUBLIC_BASE_URL?.trim().replace(/\/$/, '') ?? fallbackBase;
+    if (!publicBase) {
+      throw new BadRequestException('Cannot determine public API base URL for image');
     }
-    const filename = file.filename;
-    const imageUrl = `${proto}://${host}/api/v1/uploads/profile-photos/${filename}`;
+    const imageUrl = normalizeProfilePhotoUrl(
+      `${publicBase}/api/v1/uploads/profile-photos/${filename}`,
+    )!;
     const agg = await this.prisma.profilePhoto.aggregate({
       where: { userId: req.user.sub },
       _max: { sortOrder: true },
@@ -129,7 +135,7 @@ export class ProfilesController {
       },
     });
     await this.profilesService.recomputeAndPersistCompletion(req.user.sub);
-    return created;
+    return { ...created, imageUrl: normalizeProfilePhotoUrl(created.imageUrl) ?? created.imageUrl };
   }
 
   @Post('me/photos')

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Profile } from '@prisma/client';
 
+import { normalizeProfileRow } from '../common/utils/profile-photo-url';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateProfileDto } from './profiles.dto';
 
@@ -59,13 +60,13 @@ export class ProfilesService {
     if (!row) {
       throw new NotFoundException('Profile not found');
     }
-    return row;
+    return normalizeProfileRow(row);
   }
 
   async getOwnProfile(userId: string): Promise<unknown> {
     const existing = await this.prisma.profile.findUnique({ where: { userId }, include: ownProfileInclude });
     if (existing) {
-      return existing;
+      return normalizeProfileRow(existing);
     }
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { username: true } });
     if (!user) {
@@ -78,7 +79,8 @@ export class ProfilesService {
         profileCompletionPercent: 10,
       },
     });
-    return this.prisma.profile.findUniqueOrThrow({ where: { userId }, include: ownProfileInclude });
+    const created = await this.prisma.profile.findUniqueOrThrow({ where: { userId }, include: ownProfileInclude });
+    return normalizeProfileRow(created);
   }
 
   async updateOwnProfile(userId: string, dto: UpdateProfileDto): Promise<unknown> {
@@ -90,10 +92,11 @@ export class ProfilesService {
       update: { ...partial },
     });
     await this.recomputeAndPersistCompletion(userId);
-    return this.prisma.profile.findUniqueOrThrow({
+    const updated = await this.prisma.profile.findUniqueOrThrow({
       where: { userId },
       include: ownProfileInclude,
     });
+    return normalizeProfileRow(updated);
   }
 
   /** Call after any change that affects onboarding completion (profile fields or photos). */

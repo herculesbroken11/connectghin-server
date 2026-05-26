@@ -3,6 +3,7 @@ import { MembershipType, NotificationType } from '@prisma/client';
 
 import { ChatGateway } from '../chat/chat.gateway';
 import { NotificationsService } from '../notifications/notifications.service';
+import { normalizeUserProfilePhotos } from '../common/utils/profile-photo-url';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -58,6 +59,13 @@ export class ConversationsService {
 
     return rows.map((r) => ({
       ...r,
+      conversation: {
+        ...r.conversation,
+        participants: r.conversation.participants.map((p) => ({
+          ...p,
+          user: normalizeUserProfilePhotos(p.user) ?? p.user,
+        })),
+      },
       unreadCount: unreadMap.get(r.conversation.id) ?? 0,
     }));
   }
