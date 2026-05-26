@@ -35,8 +35,9 @@ export class GHINVerificationController {
   constructor(private readonly service: GHINVerificationService) {}
 
   @Get('me')
-  me(@Req() req: AuthedRequest): Promise<unknown> {
-    return this.service.me(req.user.sub);
+  async me(@Req() req: AuthedRequest): Promise<unknown> {
+    const row = await this.service.me(req.user.sub);
+    return row ?? null;
   }
 
   @Post('request')
