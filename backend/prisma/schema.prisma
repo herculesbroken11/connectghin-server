@@ -111,6 +111,19 @@ enum PlayerRatingStatus {
   REMOVED
 }
 
+enum FoursomeGameStyle {
+  CASUAL
+  COMPETITIVE
+  TOURNAMENT
+  SERIOUS
+}
+
+enum FoursomePostStatus {
+  OPEN
+  FILLED
+  CANCELED
+}
+
 enum AdminActionType {
   USER_SUSPEND
   USER_RESTORE
@@ -170,6 +183,7 @@ model User {
   reviewedPlayerRatings  PlayerRatingReview[]      @relation("PlayerRatingReviewedByAdmin")
   accountDeletionRequest AccountDeletionRequest?
   forgotPasswordTokens  ForgotPasswordToken[]
+  foursomeFeedPosts     FoursomeFeedPost[]      @relation("FoursomeFeedPosts")
 
   @@index([membershipType, membershipStatus])
   @@index([lifecycleStatus, isSuspended])
@@ -519,4 +533,27 @@ model AccountDeletionRequest {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([status, requestedAt])
+}
+
+model FoursomeFeedPost {
+  id                 String             @id @default(cuid())
+  posterUserId       String
+  courseName         String
+  city               String?
+  state              String?
+  roundDate          DateTime
+  teeTime            String
+  spotsNeeded        Int
+  gameStyle          FoursomeGameStyle
+  handicapPreference String?
+  feeLabel           String?
+  notes              String?
+  status             FoursomePostStatus @default(OPEN)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  poster User @relation("FoursomeFeedPosts", fields: [posterUserId], references: [id], onDelete: Cascade)
+
+  @@index([status, roundDate])
+  @@index([posterUserId, createdAt])
 }

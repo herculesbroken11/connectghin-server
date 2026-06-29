@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { getRatingSummariesForUsers } from '../common/utils/rating-summary';
 import { normalizeUserProfilePhotos } from '../common/utils/profile-photo-url';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -27,6 +28,7 @@ export class MatchesService {
           select: {
             id: true,
             username: true,
+            membershipType: true,
             profile: true,
             profilePhotos: { orderBy: { sortOrder: 'asc' }, take: 1 },
           },
@@ -35,6 +37,7 @@ export class MatchesService {
           select: {
             id: true,
             username: true,
+            membershipType: true,
             profile: true,
             profilePhotos: { orderBy: { sortOrder: 'asc' }, take: 1 },
           },
@@ -44,13 +47,28 @@ export class MatchesService {
 
     const peerIndex = await this.buildPeerChatIndex(userId);
 
+    const peerIds = matches.map((m) => (m.userOneId === userId ? m.userTwoId : m.userOneId));
+    const ratingMap = await getRatingSummariesForUsers(this.prisma, peerIds);
+
     return matches.map((m) => {
       const peerId = m.userOneId === userId ? m.userTwoId : m.userOneId;
       const chat = peerIndex.get(peerId);
+      const enrichUser = (u: typeof m.userOne) => {
+        const normalized = normalizeUserProfilePhotos(u) ?? u;
+        const rating = ratingMap.get(u.id);
+        return {
+          ...normalized,
+          isPremium: normalized.membershipType === 'PREMIUM',
+          ratingSummary: {
+            averageRating: rating?.averageRating ?? null,
+            reviewCount: rating?.reviewCount ?? 0,
+          },
+        };
+      };
       return {
         ...m,
-        userOne: normalizeUserProfilePhotos(m.userOne) ?? m.userOne,
-        userTwo: normalizeUserProfilePhotos(m.userTwo) ?? m.userTwo,
+        userOne: enrichUser(m.userOne),
+        userTwo: enrichUser(m.userTwo),
         chatPreview: {
           conversationId: chat?.conversationId ?? null,
           lastMessagePreview: chat?.preview ?? null,

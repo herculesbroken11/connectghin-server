@@ -7,6 +7,8 @@
 import {
   AdminActionType,
   BillingCycle,
+  FoursomeGameStyle,
+  FoursomePostStatus,
   MembershipStatus,
   MembershipType,
   PlayerRatingStatus,
@@ -127,8 +129,10 @@ async function main(): Promise<void> {
           locationLng: new Prisma.Decimal('-122.4094'),
           handicap: new Prisma.Decimal('14.2'),
           homeCourse: 'Harding Park',
-          bio: 'Love playing early morning rounds. Looking for partners who enjoy a relaxed pace.',
-          lookingFor: 'Relaxed pace',
+          bio: 'Love playing early morning rounds. Looking for partners who enjoy a relaxed pace and good conversation. Always up for trying new courses around the Bay Area!',
+          lookingFor: 'Playing partners, Tournaments, Serious rounds, Fill a foursome',
+          skillLevel: 'Friendly',
+          playFrequency: 'Mornings preferred',
           drinkingPreference: 'Social',
           smokingPreference: 'No',
           musicPreference: 'Music OK',
@@ -401,7 +405,49 @@ async function main(): Promise<void> {
         sportsmanship: 5,
         paceOfPlay: 4,
         wouldPlayAgain: true,
-        comment: 'Great playing partner! Very respectful and played at a good pace.',
+        comment: 'Great playing partner! Very friendly and plays at a nice pace. Handicap was accurate.',
+        status: PlayerRatingStatus.APPROVED,
+      },
+      {
+        reviewerUserId: michael.id,
+        revieweeUserId: sarah.id,
+        roundDate: new Date('2026-06-20T00:00:00.000Z'),
+        submittedAt: new Date('2026-06-22T00:00:00.000Z'),
+        course: 'Harding Park',
+        overallRating: 5,
+        handicapAccuracy: 5,
+        sportsmanship: 5,
+        paceOfPlay: 5,
+        wouldPlayAgain: true,
+        comment: 'Excellent round! Sarah is punctual, friendly, and keeps a steady pace. Would definitely play again.',
+        status: PlayerRatingStatus.APPROVED,
+      },
+      {
+        reviewerUserId: david.id,
+        revieweeUserId: sarah.id,
+        roundDate: new Date('2026-06-15T00:00:00.000Z'),
+        submittedAt: new Date('2026-06-17T00:00:00.000Z'),
+        course: 'TPC Harding Park',
+        overallRating: 5,
+        handicapAccuracy: 4,
+        sportsmanship: 5,
+        paceOfPlay: 4,
+        wouldPlayAgain: true,
+        comment: 'Fun morning round. Great conversation on the course and very respectful of etiquette.',
+        status: PlayerRatingStatus.APPROVED,
+      },
+      {
+        reviewerUserId: emma.id,
+        revieweeUserId: sarah.id,
+        roundDate: new Date('2026-06-10T00:00:00.000Z'),
+        submittedAt: new Date('2026-06-12T00:00:00.000Z'),
+        course: 'Presidio Golf Course',
+        overallRating: 4,
+        handicapAccuracy: 5,
+        sportsmanship: 5,
+        paceOfPlay: 4,
+        wouldPlayAgain: true,
+        comment: 'Patient and encouraging playing partner. Perfect for a relaxed social round.',
         status: PlayerRatingStatus.APPROVED,
       },
       {
@@ -446,6 +492,66 @@ async function main(): Promise<void> {
         wouldPlayAgain: true,
         comment: 'Decent round. Nice person, but handicap might be off by a few strokes.',
         status: PlayerRatingStatus.PENDING,
+      },
+    ],
+  });
+
+  await prisma.foursomeFeedPost.createMany({
+    data: [
+      {
+        posterUserId: sarah.id,
+        courseName: 'Harding Park',
+        city: 'San Francisco',
+        state: 'CA',
+        roundDate: new Date('2026-07-05T14:30:00.000Z'),
+        teeTime: '7:30 AM',
+        spotsNeeded: 1,
+        gameStyle: FoursomeGameStyle.COMPETITIVE,
+        handicapPreference: 'HCP 10–18',
+        notes:
+          'Looking for one reliable player. We play ready golf and keep a good pace. Serious players only.',
+        status: FoursomePostStatus.OPEN,
+      },
+      {
+        posterUserId: michael.id,
+        courseName: 'Pebble Beach Golf Links',
+        city: 'Pebble Beach',
+        state: 'CA',
+        roundDate: new Date('2026-07-06T17:00:00.000Z'),
+        teeTime: '10:00 AM',
+        spotsNeeded: 2,
+        gameStyle: FoursomeGameStyle.TOURNAMENT,
+        handicapPreference: 'HCP Under 12',
+        feeLabel: '$250 green fee',
+        notes:
+          'Two confirmed. Looking for two more low handicappers. Competitive but friendly, net scoring.',
+        status: FoursomePostStatus.OPEN,
+      },
+      {
+        posterUserId: david.id,
+        courseName: 'Crystal Springs Golf Club',
+        city: 'San Mateo',
+        state: 'CA',
+        roundDate: new Date('2026-07-08T15:00:00.000Z'),
+        teeTime: '8:00 AM',
+        spotsNeeded: 1,
+        gameStyle: FoursomeGameStyle.CASUAL,
+        handicapPreference: 'Any HCP welcome',
+        notes: 'Casual Saturday morning round. All skill levels welcome.',
+        status: FoursomePostStatus.OPEN,
+      },
+      {
+        posterUserId: emma.id,
+        courseName: 'Tilden Park Golf Course',
+        city: 'Berkeley',
+        state: 'CA',
+        roundDate: new Date('2026-07-09T16:00:00.000Z'),
+        teeTime: '9:00 AM',
+        spotsNeeded: 2,
+        gameStyle: FoursomeGameStyle.CASUAL,
+        handicapPreference: 'HCP 15–25',
+        notes: 'Looking for patient partners for a beginner-friendly casual round.',
+        status: FoursomePostStatus.OPEN,
       },
     ],
   });
@@ -537,6 +643,8 @@ ConnectGHIN demo seed complete.
   Admin login: admin@${DEMO_DOMAIN}
 
   John ↔ Sarah: mutual match + conversation with sample messages.
+  Foursome Feed: sample open spots from Sarah, Michael, David, and Emma.
+  Player ratings: Sarah has multiple approved reviews for profile demo.
   Admin demo data: GHIN requests, reports, subscriptions, app settings, audit logs.
 `);
 }

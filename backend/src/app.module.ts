@@ -5,6 +5,7 @@ import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { DiscoveryModule } from './discovery/discovery.module';
+import { FoursomeFeedModule } from './foursome-feed/foursome-feed.module';
 import { GHINVerificationModule } from './ghin-verification/ghin-verification.module';
 import { MailModule } from './mail/mail.module';
 import { MatchesModule } from './matches/matches.module';
@@ -34,6 +35,7 @@ import { UsersModule } from './users/users.module';
     ConversationsModule,
     NotificationsModule,
     PlayerRatingsModule,
+    FoursomeFeedModule,
     GHINVerificationModule,
     SubscriptionsModule,
     PrivacySafetyModule,

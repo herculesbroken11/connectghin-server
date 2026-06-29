@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma, UserLifecycleStatus } from '@prisma/client';
 
 import { DiscoveryQueryDto } from '../common/dto/pagination.dto';
+import { getRatingSummariesForUsers } from '../common/utils/rating-summary';
 import { normalizeProfileRow } from '../common/utils/profile-photo-url';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -104,6 +105,9 @@ export class DiscoveryService {
       orderBy: { updatedAt: 'desc' },
     });
 
+    const userIds = rows.map((r) => r.userId);
+    const ratingMap = await getRatingSummariesForUsers(this.prisma, userIds);
+
     return rows.map((row) => {
       const lat = toNumber(row.locationLat);
       const lng = toNumber(row.locationLng);
@@ -111,7 +115,17 @@ export class DiscoveryService {
         viewerLat != null && viewerLng != null && lat != null && lng != null
           ? Number(haversineMiles(viewerLat, viewerLng, lat, lng).toFixed(1))
           : null;
-      return { ...normalizeProfileRow(row), distanceMiles };
+      const normalized = normalizeProfileRow(row);
+      const rating = ratingMap.get(row.userId);
+      return {
+        ...normalized,
+        distanceMiles,
+        isPremium: row.user?.membershipType === 'PREMIUM',
+        ratingSummary: {
+          averageRating: rating?.averageRating ?? null,
+          reviewCount: rating?.reviewCount ?? 0,
+        },
+      };
     });
   }
 }

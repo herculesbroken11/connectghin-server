@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Profile } from '@prisma/client';
 
 import { normalizeProfileRow } from '../common/utils/profile-photo-url';
+import { getRatingSummaryForUser } from '../common/utils/rating-summary';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateProfileDto } from './profiles.dto';
 
@@ -60,7 +61,13 @@ export class ProfilesService {
     if (!row) {
       throw new NotFoundException('Profile not found');
     }
-    return normalizeProfileRow(row);
+    const ratingSummary = await getRatingSummaryForUser(this.prisma, userId);
+    const normalized = normalizeProfileRow(row);
+    return {
+      ...normalized,
+      isPremium: row.user.membershipType === 'PREMIUM',
+      ratingSummary,
+    };
   }
 
   async getOwnProfile(userId: string): Promise<unknown> {

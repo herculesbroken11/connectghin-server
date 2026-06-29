@@ -9,5 +9,6 @@ import { ConversationsService } from './conversations.service';
   imports: [ChatModule, NotificationsModule],
   controllers: [ConversationsController],
   providers: [ConversationsService],
+  exports: [ConversationsService],
 })
 export class ConversationsModule {}

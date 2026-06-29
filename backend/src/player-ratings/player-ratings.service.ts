@@ -77,7 +77,7 @@ export class PlayerRatingsService {
       ? { revieweeUserId, status: { not: PlayerRatingStatus.REMOVED } as const }
       : { revieweeUserId, status: PlayerRatingStatus.APPROVED };
 
-    const [rows, total, aggregate] = await Promise.all([
+    const [rows, total, aggregate, playAgainCount] = await Promise.all([
       this.prisma.playerRatingReview.findMany({
         where,
         skip: page * pageSize,
@@ -91,10 +91,19 @@ export class PlayerRatingsService {
       this.prisma.playerRatingReview.count({ where }),
       this.prisma.playerRatingReview.aggregate({
         where: summaryWhere,
-        _avg: { overallRating: true },
+        _avg: {
+          overallRating: true,
+          handicapAccuracy: true,
+          sportsmanship: true,
+          paceOfPlay: true,
+        },
         _count: { _all: true },
       }),
+      this.prisma.playerRatingReview.count({
+        where: { ...summaryWhere, wouldPlayAgain: true },
+      }),
     ]);
+    const totalSummary = aggregate._count._all;
     return {
       items: rows.map(mapRatingRow),
       total,
@@ -102,7 +111,12 @@ export class PlayerRatingsService {
       pageSize,
       profileSummary: {
         averageRating: Number((aggregate._avg.overallRating ?? 0).toFixed(1)),
-        totalRatings: aggregate._count._all,
+        totalRatings: totalSummary,
+        averageHandicapAccuracy: Number((aggregate._avg.handicapAccuracy ?? 0).toFixed(1)),
+        averageSportsmanship: Number((aggregate._avg.sportsmanship ?? 0).toFixed(1)),
+        averagePaceOfPlay: Number((aggregate._avg.paceOfPlay ?? 0).toFixed(1)),
+        playAgainPercent:
+          totalSummary > 0 ? Math.round((playAgainCount / totalSummary) * 100) : 0,
       },
     };
   }
