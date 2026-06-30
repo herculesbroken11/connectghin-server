@@ -184,15 +184,22 @@ export class ConversationsService {
     const recipients = participants.filter((p) => p.userId !== userId);
     const sender = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { username: true },
+      select: {
+        username: true,
+        profile: { select: { displayName: true } },
+      },
     });
     const preview = body.length > 80 ? `${body.slice(0, 80)}…` : body;
-    const dataJson = { conversationId, messageId: message.id };
+    const senderName =
+      sender?.profile?.displayName?.trim() ||
+      sender?.username ||
+      'Someone';
+    const dataJson = { conversationId, messageId: message.id, senderId: userId };
     for (const { userId: recipientId } of recipients) {
       void this.notificationsService.createInAppAndPush(
         recipientId,
         NotificationType.NEW_MESSAGE,
-        sender?.username ?? 'New message',
+        senderName,
         preview,
         dataJson,
       );
