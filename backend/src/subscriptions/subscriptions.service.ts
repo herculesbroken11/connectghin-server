@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   BillingCycle,
   MembershipStatus,
@@ -10,9 +10,12 @@ import type { Prisma } from '@prisma/client';
 
 import { IapVerificationService } from './iap-verification.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { redactPurchaseToken } from '../billing/google-play.constants';
 
 @Injectable()
 export class SubscriptionsService {
+  private readonly logger = new Logger(SubscriptionsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly iapVerification: IapVerificationService,
@@ -35,6 +38,9 @@ export class SubscriptionsService {
       status: SubscriptionStatus;
       currentPeriodStart?: string;
       currentPeriodEnd?: string;
+      orderId?: string;
+      purchaseTokenHash?: string;
+      rawResponse?: Record<string, unknown>;
     },
   ): Promise<unknown> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -62,6 +68,7 @@ export class SubscriptionsService {
 
     const currentPeriodStart = input.currentPeriodStart ? new Date(input.currentPeriodStart) : null;
     const currentPeriodEnd = input.currentPeriodEnd ? new Date(input.currentPeriodEnd) : null;
+    const expiryDate = currentPeriodEnd;
 
     const data = {
       provider: input.provider as SubscriptionProvider,
@@ -70,8 +77,12 @@ export class SubscriptionsService {
       status: input.status,
       storeProductId: input.productId,
       storeExternalId: input.externalSubscriptionId ?? null,
+      purchaseTokenHash: input.purchaseTokenHash ?? null,
+      orderId: input.orderId ?? null,
       currentPeriodStart,
       currentPeriodEnd,
+      expiryDate,
+      rawResponse: input.rawResponse ? (input.rawResponse as Prisma.InputJsonValue) : undefined,
       canceledAt: input.status === SubscriptionStatus.CANCELED ? new Date() : null,
       cancelAtPeriodEnd: input.status === SubscriptionStatus.CANCELED,
     };
@@ -120,9 +131,54 @@ export class SubscriptionsService {
     return this.syncEntitlement(userId, verified);
   }
 
-  async verifyAndSyncGoogle(userId: string, purchaseToken: string): Promise<unknown> {
-    const verified = await this.iapVerification.verifyGoogle(purchaseToken);
+  async verifyAndSyncGoogle(
+    userId: string,
+    input: string | { purchaseToken: string; productId?: string; packageName?: string },
+  ): Promise<unknown> {
+    const payload =
+      typeof input === 'string'
+        ? { purchaseToken: input }
+        : input;
+    const verified = await this.iapVerification.verifyGoogle(payload);
+    this.logger.log(
+      `Google purchase verified userId=${userId} productId=${verified.productId} status=${verified.status} token=${verified.externalSubscriptionId ? redactPurchaseToken(verified.externalSubscriptionId) : 'n/a'}`,
+    );
     return this.syncEntitlement(userId, verified);
+  }
+
+  async restoreGoogle(
+    userId: string,
+    input: { purchaseToken?: string; productId?: string; packageName?: string },
+  ): Promise<unknown> {
+    if (input.purchaseToken?.trim()) {
+      const result = await this.verifyAndSyncGoogle(userId, {
+        purchaseToken: input.purchaseToken.trim(),
+        productId: input.productId?.trim(),
+        packageName: input.packageName?.trim(),
+      });
+      return { ok: true, restored: true, ...((result as object) ?? {}) };
+    }
+
+    const latest = await this.prisma.subscription.findFirst({
+      where: {
+        userId,
+        provider: SubscriptionProvider.GOOGLE_PLAY,
+        storeExternalId: { not: null },
+      },
+      orderBy: { updatedAt: 'desc' },
+      select: { storeExternalId: true, storeProductId: true },
+    });
+
+    if (!latest?.storeExternalId) {
+      return { ok: true, restored: false, message: 'No Google Play purchase token to restore' };
+    }
+
+    const result = await this.verifyAndSyncGoogle(userId, {
+      purchaseToken: latest.storeExternalId,
+      productId: latest.storeProductId ?? undefined,
+      packageName: input.packageName?.trim(),
+    });
+    return { ok: true, restored: true, ...((result as object) ?? {}) };
   }
 
   async processAppleServerNotification(originalTransactionId: string): Promise<{ ok: true; processed: boolean }> {
@@ -206,6 +262,13 @@ export class SubscriptionsService {
         break;
       case SubscriptionStatus.CANCELED:
         membershipStatus = MembershipStatus.CANCELED;
+        break;
+      case SubscriptionStatus.EXPIRED:
+      case SubscriptionStatus.REVOKED:
+        membershipStatus = MembershipStatus.NONE;
+        break;
+      case SubscriptionStatus.PENDING:
+        membershipStatus = MembershipStatus.TRIALING;
         break;
       default:
         membershipStatus = MembershipStatus.NONE;

@@ -64,10 +64,13 @@ enum SubscriptionProvider {
 }
 
 enum SubscriptionStatus {
+  PENDING
   TRIALING
   ACTIVE
   PAST_DUE
   CANCELED
+  EXPIRED
+  REVOKED
   INCOMPLETE
   INCOMPLETE_EXPIRED
   UNPAID
@@ -347,6 +350,10 @@ model Subscription {
   provider          SubscriptionProvider
   /// Apple original transaction id, Google purchase token, or other store-held external id.
   storeExternalId   String?              @unique
+  /// SHA-256 hash of Google purchase token (never expose raw token in API responses).
+  purchaseTokenHash String?              @unique
+  /// Google Play order id when available.
+  orderId           String?
   /// Store product / SKU (e.g. App Store product id).
   storeProductId     String?
   planCode             String
@@ -358,8 +365,12 @@ model Subscription {
   trialEndAt           DateTime?
   currentPeriodStart   DateTime?
   currentPeriodEnd     DateTime?
+  /// Subscription expiry from store verification (mirrors currentPeriodEnd for Google Play).
+  expiryDate           DateTime?
   cancelAtPeriodEnd    Boolean            @default(false)
   canceledAt           DateTime?
+  /// Last raw store verification payload (Google Play API response).
+  rawResponse          Json?
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
@@ -368,6 +379,7 @@ model Subscription {
 
   @@index([userId, status])
   @@index([status, provider, createdAt])
+  @@index([orderId])
 }
 
 model PaymentEvent {

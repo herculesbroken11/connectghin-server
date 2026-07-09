@@ -16,6 +16,7 @@ import { PrivacySafetyModule } from './privacy-safety/privacy-safety.module';
 import { ProfilesModule } from './profiles/profiles.module';
 import { SettingsModule } from './settings/settings.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { BillingModule } from './billing/billing.module';
 import { SwipesModule } from './swipes/swipes.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { UsersModule } from './users/users.module';
@@ -38,6 +39,7 @@ import { UsersModule } from './users/users.module';
     FoursomeFeedModule,
     GHINVerificationModule,
     SubscriptionsModule,
+    BillingModule,
     PrivacySafetyModule,
     SettingsModule,
     AdminModule,

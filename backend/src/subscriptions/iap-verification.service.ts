@@ -1,7 +1,16 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BillingCycle, SubscriptionStatus } from '@prisma/client';
 import { createPrivateKey, createSign } from 'crypto';
+import { readFileSync } from 'fs';
+
+import {
+  GOOGLE_PLAY_DEFAULT_PACKAGE,
+  GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_IDS,
+  hashPurchaseToken,
+  isGooglePlaySubscriptionProductId,
+  redactPurchaseToken,
+} from '../billing/google-play.constants';
 
 type VerifiedEntitlement = {
   provider: 'APPLE_APP_STORE' | 'GOOGLE_PLAY';
@@ -11,10 +20,15 @@ type VerifiedEntitlement = {
   status: SubscriptionStatus;
   currentPeriodStart?: string;
   currentPeriodEnd?: string;
+  orderId?: string;
+  purchaseTokenHash?: string;
+  rawResponse?: Record<string, unknown>;
 };
 
 @Injectable()
 export class IapVerificationService {
+  private readonly logger = new Logger(IapVerificationService.name);
+
   constructor(private readonly config: ConfigService) {}
 
   async verifyApple(transactionId: string): Promise<VerifiedEntitlement> {
@@ -59,17 +73,34 @@ export class IapVerificationService {
     };
   }
 
-  async verifyGoogle(purchaseToken: string): Promise<VerifiedEntitlement> {
-    const packageName = this.config.get<string>('GOOGLE_PLAY_PACKAGE_NAME')?.trim();
-    if (!packageName) {
-      throw new UnauthorizedException('Missing GOOGLE_PLAY_PACKAGE_NAME');
+  async verifyGoogle(input: {
+    purchaseToken: string;
+    productId?: string;
+    packageName?: string;
+  }): Promise<VerifiedEntitlement> {
+    const purchaseToken = input.purchaseToken.trim();
+    const expectedProductId = input.productId?.trim();
+    const packageName = this.resolvePackageName(input.packageName);
+
+    if (!purchaseToken) {
+      throw new BadRequestException('purchaseToken is required');
     }
+    if (expectedProductId && !isGooglePlaySubscriptionProductId(expectedProductId)) {
+      throw new BadRequestException(`Unsupported productId: ${expectedProductId}`);
+    }
+
+    this.logger.log(
+      `Verifying Google Play purchase productId=${expectedProductId ?? 'auto'} package=${packageName} token=${redactPurchaseToken(purchaseToken)}`,
+    );
+
     const accessToken = await this.getGoogleAccessToken();
     const url =
       `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/` +
       `${encodeURIComponent(packageName)}/purchases/subscriptionsv2/tokens/${encodeURIComponent(purchaseToken)}`;
     const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
     if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      this.logger.warn(`Google verification failed status=${res.status} body=${body.slice(0, 200)}`);
       throw new UnauthorizedException(`Google verification failed (${res.status})`);
     }
     const data = (await res.json()) as Record<string, unknown>;
@@ -79,9 +110,16 @@ export class IapVerificationService {
     const startMs = asRfc3339Ms(asString(item.startTime));
     const endMs = asRfc3339Ms(asString(item.expiryTime));
     const state = asString(data.subscriptionState) ?? 'SUBSCRIPTION_STATE_EXPIRED';
+    const orderId =
+      asString(item.latestSuccessfulOrderId) ??
+      asString(item.latestOrderId) ??
+      asString(data.latestOrderId);
 
     if (!productId) {
       throw new UnauthorizedException('Google verification failed: missing productId');
+    }
+    if (expectedProductId && productId !== expectedProductId) {
+      throw new UnauthorizedException('Google productId does not match purchase');
     }
     this.assertAllowedProduct('GOOGLE_PLAY', productId);
 
@@ -93,7 +131,20 @@ export class IapVerificationService {
       status: mapGoogleState(state),
       currentPeriodStart: startMs ? new Date(startMs).toISOString() : undefined,
       currentPeriodEnd: endMs ? new Date(endMs).toISOString() : undefined,
+      orderId: orderId ?? undefined,
+      purchaseTokenHash: hashPurchaseToken(purchaseToken),
+      rawResponse: data,
     };
+  }
+
+  private resolvePackageName(packageName?: string): string {
+    const configured = this.config.get<string>('GOOGLE_PLAY_PACKAGE_NAME')?.trim();
+    const expected = configured || GOOGLE_PLAY_DEFAULT_PACKAGE;
+    const provided = packageName?.trim();
+    if (provided && provided !== expected) {
+      throw new BadRequestException('Invalid packageName');
+    }
+    return expected;
   }
 
   private async fetchAppleSubscription(url: string, token: string): Promise<Record<string, unknown>> {
@@ -136,16 +187,12 @@ export class IapVerificationService {
   }
 
   private async getGoogleAccessToken(): Promise<string> {
-    const clientEmail = this.config.get<string>('GOOGLE_PLAY_SERVICE_ACCOUNT_EMAIL')?.trim();
-    const privateKeyRaw = this.config.get<string>('GOOGLE_PLAY_SERVICE_ACCOUNT_PRIVATE_KEY') ?? '';
-    if (!clientEmail || !privateKeyRaw.trim()) {
-      throw new UnauthorizedException('Missing Google Play service account credentials');
-    }
-    const privateKey = createPrivateKey(normalizePem(privateKeyRaw));
+    const credentials = this.loadGoogleServiceAccountCredentials();
+    const privateKey = createPrivateKey(normalizePem(credentials.privateKey));
     const now = Math.floor(Date.now() / 1000);
     const header = base64UrlJson({ alg: 'RS256', typ: 'JWT' });
     const payload = base64UrlJson({
-      iss: clientEmail,
+      iss: credentials.clientEmail,
       scope: 'https://www.googleapis.com/auth/androidpublisher',
       aud: 'https://oauth2.googleapis.com/token',
       exp: now + 3600,
@@ -176,13 +223,53 @@ export class IapVerificationService {
     return tokenJson.access_token;
   }
 
+  private loadGoogleServiceAccountCredentials(): { clientEmail: string; privateKey: string } {
+    const jsonInline = this.config.get<string>('GOOGLE_PLAY_SERVICE_ACCOUNT_JSON')?.trim();
+    if (jsonInline) {
+      const parsed = JSON.parse(jsonInline) as { client_email?: string; private_key?: string };
+      const clientEmail = parsed.client_email?.trim();
+      const privateKey = parsed.private_key ?? '';
+      if (!clientEmail || !privateKey.trim()) {
+        throw new UnauthorizedException('Invalid GOOGLE_PLAY_SERVICE_ACCOUNT_JSON');
+      }
+      return { clientEmail, privateKey };
+    }
+
+    const credentialsPath = this.config.get<string>('GOOGLE_PLAY_CREDENTIALS_PATH')?.trim();
+    if (credentialsPath) {
+      const raw = readFileSync(credentialsPath, 'utf8');
+      const parsed = JSON.parse(raw) as { client_email?: string; private_key?: string };
+      const clientEmail = parsed.client_email?.trim();
+      const privateKey = parsed.private_key ?? '';
+      if (!clientEmail || !privateKey.trim()) {
+        throw new UnauthorizedException('Invalid GOOGLE_PLAY_CREDENTIALS_PATH file');
+      }
+      return { clientEmail, privateKey };
+    }
+
+    const clientEmail = this.config.get<string>('GOOGLE_PLAY_SERVICE_ACCOUNT_EMAIL')?.trim();
+    const privateKeyRaw = this.config.get<string>('GOOGLE_PLAY_SERVICE_ACCOUNT_PRIVATE_KEY') ?? '';
+    if (!clientEmail || !privateKeyRaw.trim()) {
+      throw new UnauthorizedException('Missing Google Play service account credentials');
+    }
+    return { clientEmail, privateKey: privateKeyRaw };
+  }
+
   private assertAllowedProduct(provider: 'APPLE_APP_STORE' | 'GOOGLE_PLAY', productId: string): void {
+    if (provider === 'GOOGLE_PLAY' && isGooglePlaySubscriptionProductId(productId)) {
+      return;
+    }
     const key =
       provider === 'APPLE_APP_STORE'
         ? 'APPLE_IAP_ALLOWED_PRODUCT_IDS'
         : 'GOOGLE_PLAY_ALLOWED_PRODUCT_IDS';
     const raw = this.config.get<string>(key)?.trim();
-    if (!raw) return;
+    if (!raw) {
+      if (provider === 'GOOGLE_PLAY') {
+        throw new UnauthorizedException(`Product ${productId} is not allowed for GOOGLE_PLAY`);
+      }
+      return;
+    }
     const allowed = new Set(
       raw
         .split(',')
@@ -204,22 +291,29 @@ function mapAppleStatus(statusCode: number): SubscriptionStatus {
 
 function mapGoogleState(state: string): SubscriptionStatus {
   switch (state) {
+    case 'SUBSCRIPTION_STATE_PENDING':
+      return SubscriptionStatus.PENDING;
     case 'SUBSCRIPTION_STATE_ACTIVE':
       return SubscriptionStatus.ACTIVE;
     case 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD':
     case 'SUBSCRIPTION_STATE_ON_HOLD':
       return SubscriptionStatus.PAST_DUE;
     case 'SUBSCRIPTION_STATE_CANCELED':
+      return SubscriptionStatus.CANCELED;
     case 'SUBSCRIPTION_STATE_EXPIRED':
+      return SubscriptionStatus.EXPIRED;
+    case 'SUBSCRIPTION_STATE_PAUSED':
       return SubscriptionStatus.CANCELED;
     default:
-      return SubscriptionStatus.CANCELED;
+      if (state.toUpperCase().includes('REVOK')) return SubscriptionStatus.REVOKED;
+      return SubscriptionStatus.EXPIRED;
   }
 }
 
 function inferBillingCycle(productId: string): BillingCycle {
   const lower = productId.toLowerCase();
   if (lower.includes('year') || lower.includes('annual')) return BillingCycle.YEARLY;
+  if (GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_IDS[1] === productId) return BillingCycle.YEARLY;
   return BillingCycle.MONTHLY;
 }
 
@@ -275,4 +369,3 @@ function asRfc3339Ms(v: string | null): number | null {
   const ms = Date.parse(v);
   return Number.isFinite(ms) ? ms : null;
 }
-

@@ -333,8 +333,8 @@ async function main(): Promise<void> {
       {
         userId: sarah.id,
         provider: SubscriptionProvider.APPLE_APP_STORE,
-        planCode: 'connectghin.premium.monthly',
-        storeProductId: 'connectghin.premium.monthly',
+        planCode: 'connectghin_monthly',
+        storeProductId: 'connectghin_monthly',
         storeExternalId: `demo_apple_tx_${sarah.id.slice(0, 8)}`,
         billingCycle: BillingCycle.MONTHLY,
         status: SubscriptionStatus.ACTIVE,
@@ -344,8 +344,8 @@ async function main(): Promise<void> {
       {
         userId: michael.id,
         provider: SubscriptionProvider.GOOGLE_PLAY,
-        planCode: 'connectghin.premium.yearly',
-        storeProductId: 'connectghin.premium.yearly',
+        planCode: 'connectghin_yearly',
+        storeProductId: 'connectghin_yearly',
         storeExternalId: `demo_google_token_${michael.id.slice(0, 8)}`,
         billingCycle: BillingCycle.YEARLY,
         status: SubscriptionStatus.TRIALING,
@@ -355,8 +355,8 @@ async function main(): Promise<void> {
       {
         userId: john.id,
         provider: SubscriptionProvider.APPLE_APP_STORE,
-        planCode: 'connectghin.premium.monthly',
-        storeProductId: 'connectghin.premium.monthly',
+        planCode: 'connectghin_monthly',
+        storeProductId: 'connectghin_monthly',
         storeExternalId: `demo_apple_tx_${john.id.slice(0, 8)}`,
         billingCycle: BillingCycle.MONTHLY,
         status: SubscriptionStatus.PAST_DUE,
