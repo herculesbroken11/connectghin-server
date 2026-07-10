@@ -10,7 +10,9 @@
     "test:e2e": "node scripts/run-jest.mjs --config ./test/jest-e2e.json --runInBand",
     "prisma:generate": "node scripts/run-prisma.mjs generate",
     "prisma:migrate": "node scripts/run-prisma.mjs migrate dev",
-    "prisma:seed": "node scripts/run-prisma.mjs db seed"
+    "prisma:seed": "node scripts/run-prisma.mjs db seed",
+    "prisma:seed-test-users": "node -r ts-node/register/transpile-only prisma/seed-test-users.ts",
+    "seed:test-users:api": "node -r ts-node/register/transpile-only scripts/seed-test-users-via-api.ts"
   },
   "prisma": {
     "seed": "node scripts/run-ts-node.mjs --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
