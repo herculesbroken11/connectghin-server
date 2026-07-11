@@ -588,13 +588,13 @@ async function main(): Promise<void> {
   });
   await prisma.appSettings.upsert({
     where: { key: 'premium_monthly_price_usd' },
-    create: { key: 'premium_monthly_price_usd', valueJson: 9.99 },
-    update: { valueJson: 9.99 },
+    create: { key: 'premium_monthly_price_usd', valueJson: 3.99 },
+    update: { valueJson: 3.99 },
   });
   await prisma.appSettings.upsert({
     where: { key: 'premium_yearly_price_usd' },
-    create: { key: 'premium_yearly_price_usd', valueJson: 99.99 },
-    update: { valueJson: 99.99 },
+    create: { key: 'premium_yearly_price_usd', valueJson: 39.99 },
+    update: { valueJson: 39.99 },
   });
   await prisma.appSettings.upsert({
     where: { key: 'auto_review_threshold' },
