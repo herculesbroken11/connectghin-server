@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -30,6 +31,7 @@ type TokenPair = { accessToken: string; refreshToken: string };
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   private readonly googleClient = new OAuth2Client();
   private readonly appleJwks = createRemoteJWKSet(new URL('https://appleid.apple.com/auth/keys'));
 
@@ -251,7 +253,13 @@ export class AuthService {
   async forgotPassword(dto: ForgotPasswordDto): Promise<{ ok: true; resetToken?: string }> {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase() },
-      select: { id: true, email: true, isActive: true, isSuspended: true },
+      select: {
+        id: true,
+        email: true,
+        isActive: true,
+        isSuspended: true,
+        authProvider: true,
+      },
     });
     if (!user || !user.isActive || user.isSuspended) {
       return { ok: true };
@@ -270,7 +278,15 @@ export class AuthService {
       this.config.get<string>('APP_PUBLIC_URL') ??
       'http://localhost:5173';
     const resetUrl = `${baseUrl.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(resetToken)}`;
-    const sent = await this.mailService.sendPasswordResetEmail(user.email, resetUrl);
+    const signedInWithGoogle = user.authProvider === AuthProvider.GOOGLE;
+    const sent = await this.mailService.sendPasswordResetEmail(user.email, resetUrl, {
+      signedInWithGoogle,
+    });
+    if (!sent) {
+      this.logger.warn(
+        `Password reset email not delivered for userId=${user.id} (SMTP may be missing). provider=${user.authProvider}`,
+      );
+    }
     const exposeDevToken = this.config.get<string>('EMAIL_DEV_EXPOSE_RESET_TOKEN') === 'true';
     if (!sent && exposeDevToken) {
       return { ok: true, resetToken };
@@ -357,6 +373,7 @@ export class AuthService {
         where: { id: record.userId },
         data: {
           passwordHash: await argon2.hash(dto.newPassword),
+          // Allow email/password login after reset while Google Sign-In still works.
           refreshTokenVersion: { increment: 1 },
         },
       }),
