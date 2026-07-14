@@ -4,13 +4,26 @@ admin/node_modules/
 backend/node_modules/
 **/node_modules/
 
-# Environment files
+# Environment files / secrets (never commit)
 .env
-.env.local
+.env.*
+!.env.example
+!**/.env.example
 admin/.env
+admin/.env.*
+!admin/.env.example
 backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Google / Firebase credential JSON
 backend/google-play-service-account.json
 google-play-service-account.json
+**/*firebase-adminsdk*.json
+**/*service-account*.json
+**/credentials/
+*.pem
+*.p12
 
 # Logs
 *.log
@@ -31,3 +44,4 @@ backend/build/
 
 # OS files
 .DS_Store
+Thumbs.db

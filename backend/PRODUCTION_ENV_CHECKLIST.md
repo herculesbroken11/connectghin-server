@@ -1,13 +1,13 @@
-# Production `.env` checklist
+﻿# Production `.env` checklist
 
 Use this when updating `backend/.env` on the server (then restart the API process).
 
-## Google Sign-In (mobile) — required
+## Google Sign-In (mobile) â€” required
 
 | Variable | Value |
 |----------|--------|
-| `GOOGLE_OAUTH_CLIENT_ID` | Web client ID (`…hnngdr8u7dp29j2a9om9b7q3er5kuki6…`) — same as Flutter `GOOGLE_SERVER_CLIENT_ID` |
-| `GOOGLE_ANDROID_CLIENT_ID` | Android client ID (`…1s7n7s6bhnhaovollf3k3c14vf2ntpg9…`) |
+| `GOOGLE_OAUTH_CLIENT_ID` | Web client ID (`â€¦5mkjtqts7c4kpbp9bt9l4kt2tfcfcovrâ€¦`) â€” same as Flutter `GOOGLE_SERVER_CLIENT_ID` |
+| `GOOGLE_ANDROID_CLIENT_ID` | Play Android client ID (`â€¦d29aauu0cg7thdpgjvcoh1njqvikva03â€¦`) |
 
 Your production file already has both. **Google login on the Play Store build is not fixed by `.env` alone.**
 
@@ -15,11 +15,12 @@ Your production file already has both. **Google login on the Play Store build is
 
 If Google Sign-In works on a sideloaded APK but fails after installing from Play:
 
-1. Open **Play Console → App integrity → App signing**
-2. Copy **App signing key certificate → SHA-1** (different from your upload keystore)
-3. Add that SHA-1 in **Firebase → Project settings → Android app `com.connectghin.app`**
+1. Open **Play Console â†’ App integrity â†’ App signing**
+2. Copy **App signing key certificate â†’ SHA-1** (different from your upload keystore)
+3. Add that SHA-1 in **Firebase â†’ project `connectghin-prod` â†’ Project settings â†’ Android app `com.connectghin.app`**
 4. Keep the **upload key** SHA-1 registered too (for local release APKs)
 5. Wait a few minutes, then update the app from Play and retry Google Sign-In
+6. Production API `.env` must use the **same** Web client ID as the app (`GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_SERVER_CLIENT_ID`)
 
 ## Recommended additions
 
@@ -47,5 +48,5 @@ Use a verified domain for `MAIL_FROM` in production (e.g. `noreply@connectghin.c
 ## Security
 
 - Never commit `backend/.env` (it is gitignored).
-- Do not store production `.env` on `E:\` root or in chat — it contains JWT secrets, DB password, and Firebase private keys.
+- Do not store production `.env` on `E:\` root or in chat â€” it contains JWT secrets, DB password, and Firebase private keys.
 - Rotate secrets if this file was shared or committed anywhere public.
