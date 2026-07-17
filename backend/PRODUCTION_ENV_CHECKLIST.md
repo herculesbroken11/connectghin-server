@@ -28,21 +28,18 @@ If Google Sign-In works on a sideloaded APK but fails after installing from Play
 |----------|------------------|-----|
 | `API_PUBLIC_BASE_URL` | `https://api.connectghin.com` | Profile photos and upload URLs returned to the app |
 | `APPLE_OAUTH_AUDIENCE` | Your iOS bundle ID (when Apple Sign-In ships) | Without it, `POST /auth/apple` returns 503 |
-| `SMTP_HOST` / `SMTP_USER` / `SMTP_PASS` / `MAIL_FROM` | Resend: see `SMTP_SETUP.md` | Required for forgot-password emails |
-| `APP_WEB_URL` | `https://admin.connectghin.com` | Reset links go to `/reset-password?token=...` |
+| `MAIL_TRANSPORT` / `RESEND_API_KEY` or `SMTP_PASS` / `MAIL_FROM` | Resend HTTPS API (see `SMTP_SETUP.md`) | Required for forgot-password — VPS often blocks SMTP |
 
-### Resend SMTP quick values
+### Resend email quick values (HTTPS API — use this on Golf-server)
 
 ```env
-SMTP_HOST="smtp.resend.com"
-SMTP_PORT="465"
-SMTP_SECURE="true"
-SMTP_USER="resend"
+MAIL_TRANSPORT="resend"
+RESEND_API_KEY="re_xxxxxxxx"
 SMTP_PASS="re_xxxxxxxx"
-MAIL_FROM="ConnectGHIN <onboarding@resend.dev>"
+MAIL_FROM="ConnectGHIN <noreply@connectghin.com>"
 ```
 
-Use a verified domain for `MAIL_FROM` in production (e.g. `noreply@connectghin.com`).
+Use a verified domain for `MAIL_FROM` in production (e.g. `noreply@connectghin.com`). Do **not** rely on SMTP ports 465/587 if `nc -vz smtp.resend.com 587` times out.
 
 
 ## Security
