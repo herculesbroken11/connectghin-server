@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import { MembershipType } from '@prisma/client';
+import { Injectable, Logger } from '@nestjs/common';
+import { MembershipType, PrivacySettings, UserSettings } from '@prisma/client';
 
 import { normalizeProfilePhotoUrl } from '../common/utils/profile-photo-url';
 import { PrismaService } from '../prisma/prisma.service';
@@ -15,8 +15,30 @@ const USER_SETTINGS_BOOL_KEYS = [
 
 type UserSettingsBoolKey = (typeof USER_SETTINGS_BOOL_KEYS)[number];
 
+const DEFAULT_NOTIFICATIONS = {
+  pushEnabled: true,
+  emailEnabled: true,
+  marketingEnabled: false,
+  notifyNewMatches: true,
+  notifyMessages: true,
+  notifyFoursomeFeed: false,
+} as const;
+
+const DEFAULT_PRIVACY = {
+  showInDiscovery: true,
+  showDistance: true,
+  showOnlineStatus: true,
+  showLastActive: false,
+  allowMessagesFromMatches: true,
+  showReadReceipts: true,
+  showLocation: true,
+  publicProfile: true,
+} as const;
+
 @Injectable()
 export class SettingsService {
+  private readonly logger = new Logger(SettingsService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   get(userId: string): Promise<unknown> {
@@ -63,33 +85,24 @@ export class SettingsService {
       publicProfile: boolean;
     };
   }> {
-    const [user, settings, privacy] = await Promise.all([
-      this.prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          email: true,
-          username: true,
-          membershipType: true,
-          membershipStatus: true,
-          profile: { select: { displayName: true, isGHINVerified: true } },
-          profilePhotos: {
-            orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
-            take: 1,
-            select: { imageUrl: true },
-          },
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        email: true,
+        username: true,
+        membershipType: true,
+        membershipStatus: true,
+        profile: { select: { displayName: true, isGHINVerified: true } },
+        profilePhotos: {
+          orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+          take: 1,
+          select: { imageUrl: true },
         },
-      }),
-      this.prisma.userSettings.upsert({
-        where: { userId },
-        create: { userId },
-        update: {},
-      }),
-      this.prisma.privacySettings.upsert({
-        where: { userId },
-        create: { userId },
-        update: {},
-      }),
-    ]);
+      },
+    });
+
+    const settings = await this.loadUserSettings(userId);
+    const privacy = await this.loadPrivacySettings(userId);
 
     const displayName =
       user?.profile?.displayName?.trim() || user?.username || 'Golfer';
@@ -125,6 +138,74 @@ export class SettingsService {
         publicProfile: privacy.publicProfile,
       },
     };
+  }
+
+  /**
+   * Upsert notification prefs. If the DB is missing newer columns (migration not
+   * deployed yet), fall back to defaults so Settings still loads.
+   */
+  private async loadUserSettings(userId: string): Promise<{
+    pushEnabled: boolean;
+    emailEnabled: boolean;
+    marketingEnabled: boolean;
+    notifyNewMatches: boolean;
+    notifyMessages: boolean;
+    notifyFoursomeFeed: boolean;
+  }> {
+    try {
+      const row: UserSettings = await this.prisma.userSettings.upsert({
+        where: { userId },
+        create: { userId },
+        update: {},
+      });
+      return {
+        pushEnabled: row.pushEnabled,
+        emailEnabled: row.emailEnabled,
+        marketingEnabled: row.marketingEnabled,
+        notifyNewMatches: row.notifyNewMatches,
+        notifyMessages: row.notifyMessages,
+        notifyFoursomeFeed: row.notifyFoursomeFeed,
+      };
+    } catch (err) {
+      this.logger.error(
+        `userSettings upsert failed for ${userId} — run: npx prisma migrate deploy. ${err instanceof Error ? err.message : err}`,
+      );
+      return { ...DEFAULT_NOTIFICATIONS };
+    }
+  }
+
+  private async loadPrivacySettings(userId: string): Promise<{
+    showInDiscovery: boolean;
+    showDistance: boolean;
+    showOnlineStatus: boolean;
+    showLastActive: boolean;
+    allowMessagesFromMatches: boolean;
+    showReadReceipts: boolean;
+    showLocation: boolean;
+    publicProfile: boolean;
+  }> {
+    try {
+      const row: PrivacySettings = await this.prisma.privacySettings.upsert({
+        where: { userId },
+        create: { userId },
+        update: {},
+      });
+      return {
+        showInDiscovery: row.showInDiscovery,
+        showDistance: row.showDistance,
+        showOnlineStatus: row.showOnlineStatus,
+        showLastActive: row.showLastActive,
+        allowMessagesFromMatches: row.allowMessagesFromMatches,
+        showReadReceipts: row.showReadReceipts,
+        showLocation: row.showLocation,
+        publicProfile: row.publicProfile,
+      };
+    } catch (err) {
+      this.logger.error(
+        `privacySettings upsert failed for ${userId} — run: npx prisma migrate deploy. ${err instanceof Error ? err.message : err}`,
+      );
+      return { ...DEFAULT_PRIVACY };
+    }
   }
 }
 
