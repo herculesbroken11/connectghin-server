@@ -41,7 +41,7 @@ export default function AdminLoginPage() {
         <div className="mb-6 flex flex-col items-center text-center sm:flex-row sm:items-center sm:text-left">
           <Image
             src="/connectghin-logo.png"
-            alt="ConnectGHIN"
+            alt="Connectghin"
             width={200}
             height={80}
             className="h-auto w-44 shrink-0 object-contain"

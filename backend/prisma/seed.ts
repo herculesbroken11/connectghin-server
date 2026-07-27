@@ -55,8 +55,8 @@ async function main(): Promise<void> {
   });
   await prisma.appSettings.upsert({
     where: { key: 'admin_brand_name' },
-    create: { key: 'admin_brand_name', valueJson: 'ConnectGHIN' },
-    update: { valueJson: 'ConnectGHIN' },
+    create: { key: 'admin_brand_name', valueJson: 'Connectghin' },
+    update: { valueJson: 'Connectghin' },
   });
 
   await wipeDemoUsers();

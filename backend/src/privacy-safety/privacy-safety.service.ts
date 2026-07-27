@@ -12,10 +12,26 @@ export class PrivacySafetyService {
   }
 
   updatePrivacy(userId: string, data: Record<string, boolean>): Promise<unknown> {
+    const allowed = [
+      'showInDiscovery',
+      'showDistance',
+      'showOnlineStatus',
+      'showLastActive',
+      'allowMessagesFromMatches',
+      'showReadReceipts',
+      'showLocation',
+      'publicProfile',
+    ] as const;
+    const patch: Record<string, boolean> = {};
+    for (const key of allowed) {
+      if (typeof data[key] === 'boolean') {
+        patch[key] = data[key];
+      }
+    }
     return this.prisma.privacySettings.upsert({
       where: { userId },
-      create: { userId, ...data },
-      update: data,
+      create: { userId, ...patch },
+      update: patch,
     });
   }
 

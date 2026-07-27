@@ -50,7 +50,7 @@ export class AdminService {
       brand = (process.env.ADMIN_BRAND_NAME ?? '').trim();
     }
     if (!brand) {
-      brand = 'ConnectGHIN';
+      brand = 'Connectghin';
     }
     if (brand.length > 80) {
       brand = brand.slice(0, 80);

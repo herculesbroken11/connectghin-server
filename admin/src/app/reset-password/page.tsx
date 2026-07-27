@@ -61,13 +61,13 @@ function ResetPasswordForm() {
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <h1 className="text-2xl font-bold text-slate-900">Reset password</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Set a new password for your ConnectGHIN account. If you signed up with Google, you can still use
+          Set a new password for your Connectghin account. If you signed up with Google, you can still use
           Continue with Google after this.
         </p>
 
         {done ? (
           <div className="mt-6 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-            Password updated. Open the ConnectGHIN app and sign in with your email and new password, or use
+            Password updated. Open the Connectghin app and sign in with your email and new password, or use
             Continue with Google.
           </div>
         ) : (

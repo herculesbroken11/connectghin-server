@@ -136,15 +136,15 @@ export class MailService {
     }
     const signedInWithGoogle = options?.signedInWithGoogle === true;
     const subject = signedInWithGoogle
-      ? 'Set a ConnectGHIN password (Google account)'
-      : 'Reset your ConnectGHIN password';
+      ? 'Set a Connectghin password (Google account)'
+      : 'Reset your Connectghin password';
     const text = signedInWithGoogle
-      ? `You signed in to ConnectGHIN with Google.\n\n` +
+      ? `You signed in to Connectghin with Google.\n\n` +
         `You can keep using Continue with Google, or set a password for email login using this link (valid 30 minutes):\n\n` +
         `${resetUrl}\n\nIf you did not request this, ignore this email.`
       : `You requested a password reset. Open this link (valid 30 minutes):\n\n${resetUrl}\n\nIf you did not request this, ignore this email.`;
     const html = signedInWithGoogle
-      ? `<p>You signed in to ConnectGHIN with <strong>Google</strong>.</p>` +
+      ? `<p>You signed in to Connectghin with <strong>Google</strong>.</p>` +
         `<p>You can keep using <strong>Continue with Google</strong>, or ` +
         `<a href="${resetUrl}">set a password</a> for email login (valid 30 minutes).</p>` +
         `<p>If you did not request this, ignore this email.</p>`
@@ -162,12 +162,12 @@ export class MailService {
     return this.sendMail({
       from,
       to,
-      subject: 'Your ConnectGHIN magic sign-in link',
+      subject: 'Your Connectghin magic sign-in link',
       text:
         `Use this sign-in link (valid 15 minutes):\n\n${magicUrl}\n\n` +
         'If you did not request this, ignore this email.',
       html:
-        `<p>Use this sign-in link (valid 15 minutes):</p><p><a href="${magicUrl}">Sign in to ConnectGHIN</a></p>` +
+        `<p>Use this sign-in link (valid 15 minutes):</p><p><a href="${magicUrl}">Sign in to Connectghin</a></p>` +
         '<p>If you did not request this, ignore this email.</p>',
     });
   }

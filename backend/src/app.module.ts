@@ -13,6 +13,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { PlayerRatingsModule } from './player-ratings/player-ratings.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PrivacySafetyModule } from './privacy-safety/privacy-safety.module';
+import { ProfilePostsModule } from './profile-posts/profile-posts.module';
 import { ProfilesModule } from './profiles/profiles.module';
 import { SettingsModule } from './settings/settings.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
@@ -37,6 +38,7 @@ import { UsersModule } from './users/users.module';
     NotificationsModule,
     PlayerRatingsModule,
     FoursomeFeedModule,
+    ProfilePostsModule,
     GHINVerificationModule,
     SubscriptionsModule,
     BillingModule,

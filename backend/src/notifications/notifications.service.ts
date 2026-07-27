@@ -46,6 +46,14 @@ export class NotificationsService {
     body: string,
     dataJson: Prisma.InputJsonValue | null,
   ): Promise<void> {
+    const settings = await this.prisma.userSettings.findUnique({ where: { userId } });
+    if (type === NotificationType.NEW_MATCH && settings && !settings.notifyNewMatches) {
+      return;
+    }
+    if (type === NotificationType.NEW_MESSAGE && settings && !settings.notifyMessages) {
+      return;
+    }
+
     await this.prisma.notification.create({
       data: {
         userId,

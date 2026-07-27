@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Profile } from '@prisma/client';
 
 import { normalizeProfileRow } from '../common/utils/profile-photo-url';
@@ -43,7 +43,25 @@ export function computeProfileCompletionPercent(profile: Profile, photoCount: nu
 export class ProfilesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getPublicProfile(userId: string): Promise<unknown> {
+  async getPublicProfile(userId: string, viewerUserId?: string): Promise<unknown> {
+    if (viewerUserId && viewerUserId !== userId) {
+      const privacy = await this.prisma.privacySettings.findUnique({ where: { userId } });
+      if (privacy && privacy.publicProfile === false) {
+        const matched = await this.prisma.match.findFirst({
+          where: {
+            OR: [
+              { userOneId: viewerUserId, userTwoId: userId },
+              { userOneId: userId, userTwoId: viewerUserId },
+            ],
+          },
+          select: { id: true },
+        });
+        if (!matched) {
+          throw new ForbiddenException('This profile is private');
+        }
+      }
+    }
+
     const row = await this.prisma.profile.findUnique({
       where: { userId },
       include: {

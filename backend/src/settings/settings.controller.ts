@@ -17,6 +17,12 @@ export class SettingsController {
     return this.service.get(req.user.sub);
   }
 
+  /** Profile + notification + privacy toggles for Settings UI. */
+  @Get('overview')
+  overview(@Req() req: AuthedRequest): Promise<unknown> {
+    return this.service.overview(req.user.sub);
+  }
+
   @Patch('me')
   update(@Req() req: AuthedRequest, @Body() body: Record<string, boolean>): Promise<unknown> {
     return this.service.update(req.user.sub, body);

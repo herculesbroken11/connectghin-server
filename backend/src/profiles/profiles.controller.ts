@@ -55,8 +55,8 @@ export class ProfilesController {
   }
 
   @Get(':userId')
-  getPublic(@Param('userId') userId: string): Promise<unknown> {
-    return this.profilesService.getPublicProfile(userId);
+  getPublic(@Req() req: AuthedRequest, @Param('userId') userId: string): Promise<unknown> {
+    return this.profilesService.getPublicProfile(userId, req.user.sub);
   }
 
   @Patch('me')

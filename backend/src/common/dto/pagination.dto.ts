@@ -155,6 +155,36 @@ export class DiscoveryQueryDto extends PaginationQueryDto {
   @Type(() => Number)
   handicapMax?: number;
 
+  /** Max distance in miles. Omit or >= 100 for unlimited. */
+  @IsOptional()
+  @Type(() => Number)
+  maxDistanceMiles?: number;
+
+  @IsOptional()
+  @IsString()
+  skillLevel?: string;
+
+  @IsOptional()
+  @IsString()
+  playFrequency?: string;
+
+  @IsOptional()
+  @IsString()
+  musicPreference?: string;
+
+  @IsOptional()
+  @IsString()
+  drinkingPreference?: string;
+
+  @IsOptional()
+  @IsString()
+  smokingPreference?: string;
+
+  /** Any | Yes | No — soft match against bio / smoking / lookingFor. */
+  @IsOptional()
+  @IsString()
+  friendly420?: string;
+
   @IsOptional()
   @Transform(({ value }) => (value === undefined || value === '' ? true : value === true || value === 'true'))
   @IsBoolean()

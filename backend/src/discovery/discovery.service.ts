@@ -36,6 +36,46 @@ function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: number):
   return earthRadiusMiles * c;
 }
 
+/** Keep unknown/empty values; match loosely when both sides are set. */
+function softPrefMatch(stored: string | null | undefined, want: string | undefined): boolean {
+  if (!want || want.trim() === '' || want.toLowerCase() === 'any') return true;
+  if (stored == null || stored.trim() === '') return true;
+  const a = stored.toLowerCase();
+  const b = want.toLowerCase();
+  return a.includes(b) || b.includes(a);
+}
+
+function smokingMatches(stored: string | null | undefined, want: string | undefined): boolean {
+  if (!want || want.toLowerCase() === 'any') return true;
+  if (stored == null || stored.trim() === '') return true;
+  const a = stored.toLowerCase();
+  if (want === 'No smoking') {
+    return a.includes('no') || a.includes('never');
+  }
+  if (want === 'OK') {
+    return !a.includes('no') && !a.includes('never');
+  }
+  return softPrefMatch(stored, want);
+}
+
+function friendly420Matches(
+  smoking: string | null | undefined,
+  bio: string | null | undefined,
+  lookingFor: string | null | undefined,
+  want: string | undefined,
+): boolean {
+  if (!want || want.toLowerCase() === 'any') return true;
+  const blob = `${smoking ?? ''} ${bio ?? ''} ${lookingFor ?? ''}`.toLowerCase();
+  const mentions = blob.includes('420') || blob.includes('cannabis') || blob.includes('weed');
+  if (want.toLowerCase() === 'yes') {
+    // Keep unknowns; only require a mention when the profile has related text.
+    if (`${smoking ?? ''}${bio ?? ''}${lookingFor ?? ''}`.trim() === '') return true;
+    return mentions;
+  }
+  if (want.toLowerCase() === 'no') return !mentions;
+  return true;
+}
+
 @Injectable()
 export class DiscoveryService {
   constructor(private readonly prisma: PrismaService) {}
@@ -79,6 +119,24 @@ export class DiscoveryService {
 
     const pageSize = Math.min(query.pageSize ?? 50, 100);
     const skip = (query.page ?? 0) * pageSize;
+    const maxDistance =
+      query.maxDistanceMiles != null && Number.isFinite(query.maxDistanceMiles) && query.maxDistanceMiles < 100
+        ? query.maxDistanceMiles
+        : null;
+
+    const hasSoftPrefs = Boolean(
+      (query.skillLevel && query.skillLevel.toLowerCase() !== 'any') ||
+        (query.playFrequency && query.playFrequency.toLowerCase() !== 'any') ||
+        (query.musicPreference && query.musicPreference.toLowerCase() !== 'any') ||
+        (query.drinkingPreference && query.drinkingPreference.toLowerCase() !== 'any') ||
+        (query.smokingPreference && query.smokingPreference.toLowerCase() !== 'any') ||
+        (query.friendly420 && query.friendly420.toLowerCase() !== 'any'),
+    );
+
+    // Over-fetch when post-filters (distance / prefs) are applied.
+    const needsPostFilter = maxDistance != null || hasSoftPrefs;
+    const fetchTake = needsPostFilter ? Math.min(Math.max(pageSize * 5, 100), 250) : pageSize;
+    const fetchSkip = needsPostFilter ? 0 : skip;
 
     const rows = await this.prisma.profile.findMany({
       where: {
@@ -100,21 +158,44 @@ export class DiscoveryService {
           },
         },
       },
-      take: pageSize,
-      skip,
+      take: fetchTake,
+      skip: fetchSkip,
       orderBy: { updatedAt: 'desc' },
     });
 
-    const userIds = rows.map((r) => r.userId);
+    const mapped = rows
+      .map((row) => {
+        const lat = toNumber(row.locationLat);
+        const lng = toNumber(row.locationLng);
+        const distanceMiles =
+          viewerLat != null && viewerLng != null && lat != null && lng != null
+            ? Number(haversineMiles(viewerLat, viewerLng, lat, lng).toFixed(1))
+            : null;
+        return { row, distanceMiles };
+      })
+      .filter(({ row, distanceMiles }) => {
+        if (maxDistance != null) {
+          if (distanceMiles == null || distanceMiles > maxDistance) return false;
+        }
+        if (!softPrefMatch(row.skillLevel, query.skillLevel)) return false;
+        if (!softPrefMatch(row.playFrequency, query.playFrequency)) return false;
+        if (!softPrefMatch(row.musicPreference, query.musicPreference)) return false;
+        if (!softPrefMatch(row.drinkingPreference, query.drinkingPreference)) return false;
+        if (!smokingMatches(row.smokingPreference, query.smokingPreference)) return false;
+        if (
+          !friendly420Matches(row.smokingPreference, row.bio, row.lookingFor, query.friendly420)
+        ) {
+          return false;
+        }
+        return true;
+      });
+
+    const pageRows = needsPostFilter ? mapped.slice(skip, skip + pageSize) : mapped;
+
+    const userIds = pageRows.map((entry) => entry.row.userId);
     const ratingMap = await getRatingSummariesForUsers(this.prisma, userIds);
 
-    return rows.map((row) => {
-      const lat = toNumber(row.locationLat);
-      const lng = toNumber(row.locationLng);
-      const distanceMiles =
-        viewerLat != null && viewerLng != null && lat != null && lng != null
-          ? Number(haversineMiles(viewerLat, viewerLng, lat, lng).toFixed(1))
-          : null;
+    return pageRows.map(({ row, distanceMiles }) => {
       const normalized = normalizeProfileRow(row);
       const rating = ratingMap.get(row.userId);
       return {

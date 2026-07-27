@@ -187,6 +187,7 @@ model User {
   accountDeletionRequest AccountDeletionRequest?
   forgotPasswordTokens  ForgotPasswordToken[]
   foursomeFeedPosts     FoursomeFeedPost[]      @relation("FoursomeFeedPosts")
+  profilePosts          ProfilePost[]
 
   @@index([membershipType, membershipStatus])
   @@index([lifecycleStatus, isSuspended])
@@ -497,18 +498,25 @@ model PrivacySettings {
   showLastActive             Boolean  @default(false)
   allowMessagesFromMatches   Boolean  @default(true)
   showReadReceipts           Boolean  @default(true)
+  /// Visible location to nearby golfers (Settings → Privacy).
+  showLocation               Boolean  @default(true)
+  /// Public profile discoverable / viewable (Settings → Privacy).
+  publicProfile              Boolean  @default(true)
   updatedAt                  DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model UserSettings {
-  id               String   @id @default(cuid())
-  userId           String   @unique
-  pushEnabled      Boolean  @default(true)
-  emailEnabled     Boolean  @default(true)
-  marketingEnabled Boolean  @default(false)
-  updatedAt        DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  pushEnabled        Boolean  @default(true)
+  emailEnabled       Boolean  @default(true)
+  marketingEnabled   Boolean  @default(false)
+  notifyNewMatches   Boolean  @default(true)
+  notifyMessages     Boolean  @default(true)
+  notifyFoursomeFeed Boolean  @default(false)
+  updatedAt          DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -568,4 +576,18 @@ model FoursomeFeedPost {
 
   @@index([status, roundDate])
   @@index([posterUserId, createdAt])
+}
+
+/// Social posts on a golfer's profile (course shots, group pics, landscapes, notes).
+model ProfilePost {
+  id        String   @id @default(cuid())
+  userId    String
+  body      String?
+  imageUrl  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }

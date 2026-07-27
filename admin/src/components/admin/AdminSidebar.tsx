@@ -99,7 +99,7 @@ export function AdminSidebar() {
           >
             <Image
               src="/connectghin-logo.png"
-              alt="ConnectGHIN"
+              alt="Connectghin"
               width={160}
               height={56}
               className="mb-2 h-10 w-auto object-contain object-left"
