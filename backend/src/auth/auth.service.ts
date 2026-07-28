@@ -385,7 +385,11 @@ export class AuthService {
     return { ok: true };
   }
 
-  async changePassword(userId: string, dto: ChangePasswordDto): Promise<{ ok: true }> {
+  async changePassword(userId: string, dto: ChangePasswordDto): Promise<{
+    ok: true;
+    accessToken: string;
+    refreshToken: string;
+  }> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       throw new UnauthorizedException('User not found');
@@ -394,14 +398,15 @@ export class AuthService {
     if (!validOldPassword) {
       throw new UnauthorizedException('Current password is wrong');
     }
-    await this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id: user.id },
       data: {
         passwordHash: await argon2.hash(dto.newPassword),
         refreshTokenVersion: { increment: 1 },
       },
     });
-    return { ok: true };
+    const tokens = await this.issueTokens(updated.id, updated.role, updated.refreshTokenVersion);
+    return { ok: true, ...tokens };
   }
 
   async me(userId: string): Promise<unknown> {

@@ -78,7 +78,7 @@ export class AuthController {
   changePassword(
     @Req() req: AuthedRequest,
     @Body() dto: ChangePasswordDto,
-  ): Promise<{ ok: true }> {
+  ): Promise<{ ok: true; accessToken: string; refreshToken: string }> {
     return this.authService.changePassword(req.user.sub, dto);
   }
 
