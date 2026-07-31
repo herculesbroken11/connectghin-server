@@ -563,8 +563,8 @@ async function main(): Promise<void> {
   });
   await prisma.appSettings.upsert({
     where: { key: 'trial_days' },
-    create: { key: 'trial_days', valueJson: 7 },
-    update: { valueJson: 7 },
+    create: { key: 'trial_days', valueJson: 0 },
+    update: { valueJson: 0 },
   });
   await prisma.appSettings.upsert({
     where: { key: 'maintenance_mode' },

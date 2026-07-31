@@ -6,7 +6,7 @@ async function main() {
   const defaults = [
     { key: 'free_swipe_daily_limit', valueJson: 50 },
     { key: 'premium_direct_message_enabled', valueJson: true },
-    { key: 'trial_days', valueJson: 7 },
+    { key: 'trial_days', valueJson: 0 },
     { key: 'support_email', valueJson: 'support@connectghin.app' },
     { key: 'maintenance_mode', valueJson: false },
   ];

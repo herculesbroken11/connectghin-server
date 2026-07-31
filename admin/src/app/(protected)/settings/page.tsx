@@ -416,7 +416,9 @@ export default function AppSettingsPage() {
               value={String(form.trial_days)}
               onChange={(e) => setField('trial_days', e.target.value)}
             />
-            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">Number of trial days for new premium users</p>
+            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+              Launch default is 0 (no free trial). Set to 3 later if you add a short trial in Play Console.
+            </p>
           </div>
           <div className="grid gap-6 sm:grid-cols-2">
             <div>
