@@ -37,6 +37,8 @@ const IMAGES = {
   david:
     'https://images.unsplash.com/photo-1693163487498-07bbd30067f6?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080',
   john: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=400&fit=crop',
+  support:
+    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop',
 };
 
 async function wipeDemoUsers(): Promise<void> {
@@ -60,6 +62,81 @@ async function main(): Promise<void> {
   });
 
   await wipeDemoUsers();
+
+  // Stable support/test login with full golfer profile (not wiped with demo.* users).
+  const supportPasswordHash = await argon2.hash('qwer1234QWER!@#$');
+  const supportProfile = {
+    displayName: 'Sam Rivera',
+    age: 34,
+    addressLine1: '100 Market St',
+    city: 'San Francisco',
+    state: 'CA',
+    postalCode: '94105',
+    country: 'USA',
+    locationLat: new Prisma.Decimal('37.7936'),
+    locationLng: new Prisma.Decimal('-122.3965'),
+    handicap: new Prisma.Decimal('10.8'),
+    homeCourse: 'TPC Harding Park',
+    bio: 'ConnectGHIN support test account. Friendly mid-handicap golfer who likes weekend foursomes and trying new Bay Area courses.',
+    lookingFor: 'Playing partners, Fill a foursome, Friendly rounds',
+    skillLevel: 'Intermediate',
+    playFrequency: 'Weekends',
+    drinkingPreference: 'Social',
+    smokingPreference: 'No',
+    musicPreference: 'Music OK',
+    gender: 'Male',
+    profileCompletionPercent: 100,
+    isGHINVerified: true,
+  };
+  const existingSupport = await prisma.user.findUnique({
+    where: { email: 'support@connectghin.com' },
+    select: { id: true },
+  });
+  if (existingSupport) {
+    await prisma.profilePhoto.deleteMany({ where: { userId: existingSupport.id } });
+    await prisma.user.update({
+      where: { email: 'support@connectghin.com' },
+      data: {
+        passwordHash: supportPasswordHash,
+        username: 'support_connectghin',
+        role: UserRole.USER,
+        membershipType: MembershipType.PREMIUM,
+        membershipStatus: MembershipStatus.ACTIVE,
+        isEmailVerified: true,
+        isActive: true,
+        isSuspended: false,
+        profile: {
+          upsert: {
+            create: supportProfile,
+            update: supportProfile,
+          },
+        },
+        privacySettings: { upsert: { create: {}, update: {} } },
+        userSettings: { upsert: { create: {}, update: {} } },
+        profilePhotos: {
+          create: [{ imageUrl: IMAGES.support, sortOrder: 0, isPrimary: true }],
+        },
+      },
+    });
+  } else {
+    await prisma.user.create({
+      data: {
+        email: 'support@connectghin.com',
+        username: 'support_connectghin',
+        role: UserRole.USER,
+        membershipType: MembershipType.PREMIUM,
+        membershipStatus: MembershipStatus.ACTIVE,
+        passwordHash: supportPasswordHash,
+        isEmailVerified: true,
+        profile: { create: supportProfile },
+        privacySettings: { create: {} },
+        userSettings: { create: {} },
+        profilePhotos: {
+          create: [{ imageUrl: IMAGES.support, sortOrder: 0, isPrimary: true }],
+        },
+      },
+    });
+  }
 
   await prisma.user.create({
     data: {
@@ -641,6 +718,9 @@ ConnectGHIN demo seed complete.
 
   Other accounts (same password): admin, sarah, michael, emma, david @${DEMO_DOMAIN}
   Admin login: admin@${DEMO_DOMAIN}
+
+  Support test:   support@connectghin.com / qwer1234QWER!@#$
+                  (Sam Rivera — Premium, Handicap Verified, SF profile + photo)
 
   John ↔ Sarah: mutual match + conversation with sample messages.
   Foursome Feed: sample open spots from Sarah, Michael, David, and Emma.
