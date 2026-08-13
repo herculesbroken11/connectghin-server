@@ -42,6 +42,15 @@ const IMAGES = {
 };
 
 async function wipeDemoUsers(): Promise<void> {
+  // Clear leftover demo store IDs first (safe if cascade already removed them).
+  await prisma.subscription.deleteMany({
+    where: {
+      OR: [
+        { storeExternalId: { startsWith: 'demo_apple_tx_' } },
+        { storeExternalId: { startsWith: 'demo_google_token_' } },
+      ],
+    },
+  });
   await prisma.user.deleteMany({
     where: { email: { endsWith: `@${DEMO_DOMAIN}` } },
   });
@@ -412,7 +421,7 @@ async function main(): Promise<void> {
         provider: SubscriptionProvider.APPLE_APP_STORE,
         planCode: 'connectghin_monthly',
         storeProductId: 'connectghin_monthly',
-        storeExternalId: `demo_apple_tx_${sarah.id.slice(0, 8)}`,
+        storeExternalId: `demo_apple_tx_${sarah.id}`,
         billingCycle: BillingCycle.MONTHLY,
         status: SubscriptionStatus.ACTIVE,
         amount: 1999,
@@ -423,7 +432,7 @@ async function main(): Promise<void> {
         provider: SubscriptionProvider.GOOGLE_PLAY,
         planCode: 'connectghin_yearly',
         storeProductId: 'connectghin_yearly',
-        storeExternalId: `demo_google_token_${michael.id.slice(0, 8)}`,
+        storeExternalId: `demo_google_token_${michael.id}`,
         billingCycle: BillingCycle.YEARLY,
         status: SubscriptionStatus.TRIALING,
         amount: 14999,
@@ -434,7 +443,7 @@ async function main(): Promise<void> {
         provider: SubscriptionProvider.APPLE_APP_STORE,
         planCode: 'connectghin_monthly',
         storeProductId: 'connectghin_monthly',
-        storeExternalId: `demo_apple_tx_${john.id.slice(0, 8)}`,
+        storeExternalId: `demo_apple_tx_${john.id}`,
         billingCycle: BillingCycle.MONTHLY,
         status: SubscriptionStatus.PAST_DUE,
         amount: 1999,
