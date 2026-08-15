@@ -158,6 +158,7 @@ model User {
   updatedAt           DateTime            @updatedAt
   lastLoginAt         DateTime?
   authProvider        AuthProvider        @default(EMAIL)
+  appleUserId         String?             @unique
 
   profile                Profile?
   profilePhotos          ProfilePhoto[]

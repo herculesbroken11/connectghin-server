@@ -27,7 +27,7 @@ If Google Sign-In works on a sideloaded APK but fails after installing from Play
 | Variable | Production value | Why |
 |----------|------------------|-----|
 | `API_PUBLIC_BASE_URL` | `https://api.connectghin.com` | Profile photos and upload URLs returned to the app |
-| `APPLE_OAUTH_AUDIENCE` | Your iOS bundle ID (when Apple Sign-In ships) | Without it, `POST /auth/apple` returns 503 |
+| `APPLE_OAUTH_AUDIENCE` | `com.connectghin.app` (iOS bundle ID) | Without it, `POST /auth/apple` used to return 503; code now also defaults to this bundle ID |
 | `MAIL_TRANSPORT` / `RESEND_API_KEY` or `SMTP_PASS` / `MAIL_FROM` | Resend HTTPS API (see `SMTP_SETUP.md`) | Required for forgot-password — VPS often blocks SMTP |
 
 ### Resend email quick values (HTTPS API — use this on Golf-server)

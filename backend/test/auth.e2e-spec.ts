@@ -58,4 +58,14 @@ describe('Auth API (e2e)', () => {
       .expect(200);
     expect(me.body.email).toBe(email.toLowerCase());
   });
+
+  it('rejects Apple login without idToken', async () => {
+    if (!app) {
+      console.warn('Skipping e2e: set DATABASE_URL and run migrations.');
+      return;
+    }
+    const res = await request(app.getHttpServer()).post('/api/v1/auth/apple').send({});
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBeLessThan(500);
+  });
 });

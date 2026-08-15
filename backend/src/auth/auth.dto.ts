@@ -71,4 +71,12 @@ export class AppleLoginDto {
   @IsOptional()
   @IsEmail()
   email?: string;
+
+  @IsOptional()
+  @IsString()
+  fullName?: string;
+
+  @IsOptional()
+  @IsString()
+  nonce?: string;
 }

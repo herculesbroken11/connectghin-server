@@ -145,20 +145,22 @@ export class AuthService {
     if (!rawToken) {
       throw new BadRequestException('Apple idToken is required');
     }
-    const audienceRaw =
-      this.config.get<string>('APPLE_OAUTH_AUDIENCE') ??
-      this.config.get<string>('APPLE_IAP_BUNDLE_ID') ??
-      '';
-    const audiences = audienceRaw
-      .split(',')
-      .map((v) => v.trim())
-      .filter(Boolean);
+    const audienceRaw = [
+      this.config.get<string>('APPLE_OAUTH_AUDIENCE'),
+      this.config.get<string>('APPLE_IAP_BUNDLE_ID'),
+      'com.connectghin.app',
+    ]
+      .filter((v): v is string => Boolean(v && v.trim()))
+      .join(',');
+    const audiences = [...new Set(audienceRaw.split(',').map((v) => v.trim()).filter(Boolean))];
     if (!audiences.length) {
       throw new ServiceUnavailableException('Apple sign-in is not available right now. Please use email login.');
     }
 
     let claimsEmail: string | null = null;
     let verifiedEmail = false;
+    let appleUserId: string | null = null;
+    let tokenNonce: string | null = null;
     let matchedAudience = false;
     for (const aud of audiences) {
       try {
@@ -167,41 +169,60 @@ export class AuthService {
           audience: aud,
         });
         matchedAudience = true;
+        appleUserId = typeof payload.sub === 'string' && payload.sub.trim() ? payload.sub.trim() : null;
         claimsEmail = typeof payload.email === 'string' ? payload.email.toLowerCase() : null;
         verifiedEmail = payload.email_verified === true || payload.email_verified === 'true';
+        tokenNonce = typeof payload.nonce === 'string' ? payload.nonce : null;
         break;
       } catch {
         // Try next configured audience.
       }
     }
-    if (!matchedAudience) {
+    if (!matchedAudience || !appleUserId) {
       throw new UnauthorizedException('Apple sign-in failed. Please try again.');
+    }
+
+    const rawNonce = dto.nonce?.trim();
+    if (rawNonce) {
+      const expectedNonce = createHash('sha256').update(rawNonce).digest('hex');
+      if (tokenNonce !== expectedNonce) {
+        throw new UnauthorizedException('Apple sign-in failed. Please try again.');
+      }
     }
 
     const fallbackEmail = dto.email?.trim().toLowerCase() || null;
     const email = claimsEmail || fallbackEmail;
-    if (!email) {
-      throw new UnauthorizedException('Apple sign-in did not return an email address.');
+    const displayName = dto.fullName?.trim().slice(0, 80) || null;
+
+    let user = await this.prisma.user.findUnique({ where: { appleUserId } });
+    if (!user && email) {
+      user = await this.prisma.user.findUnique({ where: { email } });
+      if (user?.appleUserId && user.appleUserId !== appleUserId) {
+        throw new UnauthorizedException('Apple sign-in failed. Please try again.');
+      }
     }
 
-    let user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
+      if (!email) {
+        throw new UnauthorizedException('Apple sign-in did not return an email address.');
+      }
       const localPart = email.split('@')[0] || 'golfer';
-      const base = sanitizeUsername(localPart);
+      const base = sanitizeUsername(displayName || localPart);
       const username = await this.buildAvailableUsername(base);
       user = await this.prisma.user.create({
         data: {
           email,
           username,
+          appleUserId,
           passwordHash: await argon2.hash(randomBytes(24).toString('hex')),
-          isEmailVerified: verifiedEmail,
+          isEmailVerified: verifiedEmail || email.endsWith('@privaterelay.appleid.com'),
           authProvider: AuthProvider.APPLE,
         },
       });
       await this.prisma.profile.create({
         data: {
           userId: user.id,
-          displayName: username,
+          displayName: (displayName || username).slice(0, 80),
           profileCompletionPercent: 10,
         },
       });
@@ -217,6 +238,7 @@ export class AuthService {
       data: {
         lastLoginAt: new Date(),
         authProvider: AuthProvider.APPLE,
+        appleUserId: user.appleUserId ?? appleUserId,
         isEmailVerified: user.isEmailVerified || verifiedEmail,
       },
     });
