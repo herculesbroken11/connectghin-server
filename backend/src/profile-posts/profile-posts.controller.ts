@@ -16,13 +16,13 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { Request } from 'express';
-import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import { diskStorage } from 'multer';
 import * as path from 'path';
 
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { SuspendedUserGuard } from '../common/guards/suspended-user.guard';
+import { acceptImageUpload, storedImageFilename } from '../common/upload/image-upload';
 import { normalizePostImageUrl, ProfilePostsService } from './profile-posts.service';
 
 const PROFILE_POSTS_DIR = path.join(process.cwd(), 'uploads', 'profile-posts');
@@ -88,24 +88,12 @@ export class ProfilePostsController {
           cb(null, PROFILE_POSTS_DIR);
         },
         filename: (_req, file, cb) => {
-          const ext = path.extname(file.originalname).toLowerCase();
-          const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
-          const useExt = allowed.includes(ext) ? ext : '.jpg';
-          cb(null, `${randomUUID()}${useExt}`);
+          cb(null, storedImageFilename(file.originalname));
         },
       }),
       limits: { fileSize: 8 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
-        const ext = path.extname(file.originalname).toLowerCase();
-        const allowedExt = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
-        const extOk = allowedExt.includes(ext);
-        const mimeOk = file.mimetype.startsWith('image/');
-        const octetOk = file.mimetype === 'application/octet-stream' && extOk;
-        if (mimeOk || octetOk) {
-          cb(null, true);
-          return;
-        }
-        cb(null, false);
+        cb(null, acceptImageUpload(file));
       },
     }),
   )

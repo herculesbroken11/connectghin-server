@@ -14,7 +14,6 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { randomUUID } from 'crypto';
 import { Request } from 'express';
 import { diskStorage } from 'multer';
 import * as fs from 'fs';
@@ -23,6 +22,7 @@ import * as path from 'path';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { SuspendedUserGuard } from '../common/guards/suspended-user.guard';
 import { PrismaService } from '../prisma/prisma.service';
+import { acceptImageUpload, storedImageFilename } from '../common/upload/image-upload';
 import { AddPhotoDto, UpdateProfileDto } from './profiles.dto';
 import { normalizeProfilePhotoUrl } from '../common/utils/profile-photo-url';
 import { ProfilesService } from './profiles.service';
@@ -73,26 +73,12 @@ export class ProfilesController {
           cb(null, PROFILE_PHOTOS_DIR);
         },
         filename: (_req, file, cb) => {
-          const ext = path.extname(file.originalname).toLowerCase();
-          const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
-          const useExt = allowed.includes(ext) ? ext : '.jpg';
-          cb(null, `${randomUUID()}${useExt}`);
+          cb(null, storedImageFilename(file.originalname));
         },
       }),
       limits: { fileSize: 8 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
-        const ext = path.extname(file.originalname).toLowerCase();
-        const allowedExt = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
-        const extOk = allowedExt.includes(ext);
-        const mimeOk = file.mimetype.startsWith('image/');
-        // Android / image_picker often send application/octet-stream; validate by extension too.
-        const octetOk = file.mimetype === 'application/octet-stream' && extOk;
-        if (mimeOk || octetOk) {
-          cb(null, true);
-          return;
-        }
-        // Never pass Error to cb — that becomes an unhandled 500. Reject file; handler returns 400.
-        cb(null, false);
+        cb(null, acceptImageUpload(file));
       },
     }),
   )
