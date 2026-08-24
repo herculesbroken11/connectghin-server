@@ -1,7 +1,8 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
-import { MembershipType, NotificationType } from '@prisma/client';
+import { NotificationType } from '@prisma/client';
 
 import { ChatGateway } from '../chat/chat.gateway';
+import { isEffectivePremium, PREMIUM_USER_SELECT } from '../common/premium/effective-premium';
 import { NotificationsService } from '../notifications/notifications.service';
 import { normalizeUserProfilePhotos } from '../common/utils/profile-photo-url';
 import { PrismaService } from '../prisma/prisma.service';
@@ -103,14 +104,14 @@ export class ConversationsService {
     });
     const user = await this.prisma.user.findUnique({
       where: { id: currentUserId },
-      select: { membershipType: true },
+      select: PREMIUM_USER_SELECT,
     });
     const premiumMessagingEnabled = await this.prisma.appSettings.findUnique({
       where: { key: 'premium_direct_message_enabled' },
     });
     const premiumDmAllowed = premiumMessagingEnabled?.valueJson === true;
     const canDirectMessage =
-      user?.membershipType === MembershipType.PREMIUM &&
+      isEffectivePremium(user ?? {}) &&
       premiumDmAllowed &&
       (!existingMatch || !existingMatch.isActive);
 

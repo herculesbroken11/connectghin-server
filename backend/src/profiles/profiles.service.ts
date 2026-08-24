@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Profile } from '@prisma/client';
 
+import { isEffectivePremium, PREMIUM_USER_SELECT } from '../common/premium/effective-premium';
 import { normalizeProfileRow } from '../common/utils/profile-photo-url';
 import { getRatingSummaryForUser } from '../common/utils/rating-summary';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,8 +12,7 @@ const ownProfileInclude = {
     select: {
       email: true,
       username: true,
-      membershipType: true,
-      membershipStatus: true,
+      ...PREMIUM_USER_SELECT,
       profilePhotos: { orderBy: { sortOrder: 'asc' as const } },
     },
   },
@@ -68,8 +68,7 @@ export class ProfilesService {
         user: {
           select: {
             id: true,
-            membershipType: true,
-            membershipStatus: true,
+            ...PREMIUM_USER_SELECT,
             createdAt: true,
             profilePhotos: { orderBy: { sortOrder: 'asc' } },
           },
@@ -83,7 +82,7 @@ export class ProfilesService {
     const normalized = normalizeProfileRow(row);
     return {
       ...normalized,
-      isPremium: row.user.membershipType === 'PREMIUM',
+      isPremium: isEffectivePremium(row.user),
       ratingSummary,
     };
   }
@@ -91,7 +90,11 @@ export class ProfilesService {
   async getOwnProfile(userId: string): Promise<unknown> {
     const existing = await this.prisma.profile.findUnique({ where: { userId }, include: ownProfileInclude });
     if (existing) {
-      return normalizeProfileRow(existing);
+      const normalized = normalizeProfileRow(existing) as Record<string, unknown>;
+      return {
+        ...normalized,
+        isPremium: isEffectivePremium(existing.user),
+      };
     }
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { username: true } });
     if (!user) {
@@ -105,7 +108,11 @@ export class ProfilesService {
       },
     });
     const created = await this.prisma.profile.findUniqueOrThrow({ where: { userId }, include: ownProfileInclude });
-    return normalizeProfileRow(created);
+    const normalized = normalizeProfileRow(created) as Record<string, unknown>;
+    return {
+      ...normalized,
+      isPremium: isEffectivePremium(created.user),
+    };
   }
 
   async updateOwnProfile(userId: string, dto: UpdateProfileDto): Promise<unknown> {

@@ -39,6 +39,12 @@ const KEY_META = {
   premium_yearly_price_usd: 'number',
   auto_review_threshold: 'number',
   support_contact_email: 'string',
+  privacy_contact_email: 'string',
+  support_email: 'string',
+  company_display_name: 'string',
+  business_mailing_address: 'string',
+  terms_url: 'string',
+  privacy_url: 'string',
   admin_report_moderation_guidelines: 'string',
   admin_verification_guidelines: 'string',
   admin_ui_copy: 'string',
@@ -53,7 +59,7 @@ const KNOWN_KEYS = new Set<string>(Object.keys(KEY_META));
 
 /** Only used when a key has no row in DB yet — neutral so we never show invented business data. */
 const EMPTY_DEFAULTS: Record<KnownKey, string | number | boolean> = {
-  free_swipe_daily_limit: 0,
+  free_swipe_daily_limit: 10,
   premium_unlimited_swipes_enabled: false,
   verified_only_filter_enabled: false,
   premium_direct_message_enabled: false,
@@ -62,6 +68,12 @@ const EMPTY_DEFAULTS: Record<KnownKey, string | number | boolean> = {
   premium_yearly_price_usd: 0,
   auto_review_threshold: 0,
   support_contact_email: '',
+  privacy_contact_email: '',
+  support_email: '',
+  company_display_name: '',
+  business_mailing_address: '',
+  terms_url: '',
+  privacy_url: '',
   admin_report_moderation_guidelines: '',
   admin_verification_guidelines: '',
   admin_ui_copy: '',
@@ -361,7 +373,9 @@ export default function AppSettingsPage() {
               value={String(form.free_swipe_daily_limit)}
               onChange={(e) => setField('free_swipe_daily_limit', e.target.value)}
             />
-            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">Number of swipes per day for free users</p>
+            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+              Number of connects per day for free users. If no setting exists, the backend defaults to 10.
+            </p>
           </div>
           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div>
@@ -459,7 +473,6 @@ export default function AppSettingsPage() {
           onSave={() =>
             saveKeys('safety', [
               'auto_review_threshold',
-              'support_contact_email',
               'admin_report_moderation_guidelines',
               'admin_verification_guidelines',
             ])
@@ -478,18 +491,6 @@ export default function AppSettingsPage() {
               onChange={(e) => setField('auto_review_threshold', e.target.value)}
             />
             <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">Number of reports before automatic admin review</p>
-          </div>
-          <div>
-            <label htmlFor="support_contact_email" className="block text-sm font-medium text-gray-900 dark:text-white">
-              Support email
-            </label>
-            <input
-              id="support_contact_email"
-              type="email"
-              className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-connect-600 focus:outline-none focus:ring-1 focus:ring-connect-600 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
-              value={String(form.support_contact_email)}
-              onChange={(e) => setField('support_contact_email', e.target.value)}
-            />
           </div>
           <div>
             <label
@@ -522,6 +523,107 @@ export default function AppSettingsPage() {
               onChange={(e) => setField('admin_verification_guidelines', e.target.value)}
               placeholder="One guideline per line"
             />
+          </div>
+        </SettingsCard>
+
+        <SettingsCard
+          title="Legal / Contact"
+          subtitle="Configure the organization details and legal links shown to users"
+          saving={saving === 'legal'}
+          onSave={() =>
+            saveKeys('legal', [
+              'privacy_contact_email',
+              'support_email',
+              'company_display_name',
+              'business_mailing_address',
+              'terms_url',
+              'privacy_url',
+            ])
+          }
+        >
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+            The privacy mailbox must be a real, monitored inbox. Do not enter an invented email address.
+          </div>
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div>
+              <label htmlFor="privacy_contact_email" className="block text-sm font-medium text-gray-900 dark:text-white">
+                Privacy contact email
+              </label>
+              <input
+                id="privacy_contact_email"
+                type="email"
+                value={String(form.privacy_contact_email)}
+                onChange={(e) => setField('privacy_contact_email', e.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-connect-600 focus:outline-none focus:ring-1 focus:ring-connect-600 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+              />
+            </div>
+            <div>
+              <label htmlFor="support_email" className="block text-sm font-medium text-gray-900 dark:text-white">
+                Support email
+              </label>
+              <input
+                id="support_email"
+                type="email"
+                value={String(form.support_email)}
+                onChange={(e) => setField('support_email', e.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-connect-600 focus:outline-none focus:ring-1 focus:ring-connect-600 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+              />
+              <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                This key takes precedence over the legacy support_contact_email setting.
+              </p>
+            </div>
+          </div>
+          <div>
+            <label htmlFor="company_display_name" className="block text-sm font-medium text-gray-900 dark:text-white">
+              Company display name
+            </label>
+            <input
+              id="company_display_name"
+              type="text"
+              value={String(form.company_display_name)}
+              onChange={(e) => setField('company_display_name', e.target.value)}
+              className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-connect-600 focus:outline-none focus:ring-1 focus:ring-connect-600 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+            />
+          </div>
+          <div>
+            <label htmlFor="business_mailing_address" className="block text-sm font-medium text-gray-900 dark:text-white">
+              Business mailing address
+            </label>
+            <textarea
+              id="business_mailing_address"
+              rows={3}
+              value={String(form.business_mailing_address)}
+              onChange={(e) => setField('business_mailing_address', e.target.value)}
+              className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-connect-600 focus:outline-none focus:ring-1 focus:ring-connect-600 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+            />
+          </div>
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div>
+              <label htmlFor="terms_url" className="block text-sm font-medium text-gray-900 dark:text-white">
+                Terms URL
+              </label>
+              <input
+                id="terms_url"
+                type="url"
+                value={String(form.terms_url)}
+                onChange={(e) => setField('terms_url', e.target.value)}
+                placeholder="https://"
+                className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-connect-600 focus:outline-none focus:ring-1 focus:ring-connect-600 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+              />
+            </div>
+            <div>
+              <label htmlFor="privacy_url" className="block text-sm font-medium text-gray-900 dark:text-white">
+                Privacy URL
+              </label>
+              <input
+                id="privacy_url"
+                type="url"
+                value={String(form.privacy_url)}
+                onChange={(e) => setField('privacy_url', e.target.value)}
+                placeholder="https://"
+                className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-connect-600 focus:outline-none focus:ring-1 focus:ring-connect-600 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+              />
+            </div>
           </div>
         </SettingsCard>
 

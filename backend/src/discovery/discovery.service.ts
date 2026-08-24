@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma, UserLifecycleStatus } from '@prisma/client';
 
 import { DiscoveryQueryDto } from '../common/dto/pagination.dto';
+import { isEffectivePremium, PREMIUM_USER_SELECT } from '../common/premium/effective-premium';
 import { getRatingSummariesForUsers } from '../common/utils/rating-summary';
 import { normalizeProfileRow } from '../common/utils/profile-photo-url';
 import { PrismaService } from '../prisma/prisma.service';
@@ -153,7 +154,7 @@ export class DiscoveryService {
       include: {
         user: {
           select: {
-            membershipType: true,
+            ...PREMIUM_USER_SELECT,
             profilePhotos: { orderBy: { sortOrder: 'asc' }, take: 1 },
           },
         },
@@ -201,7 +202,7 @@ export class DiscoveryService {
       return {
         ...normalized,
         distanceMiles,
-        isPremium: row.user?.membershipType === 'PREMIUM',
+        isPremium: isEffectivePremium(row.user ?? {}),
         ratingSummary: {
           averageRating: rating?.averageRating ?? null,
           reviewCount: rating?.reviewCount ?? 0,

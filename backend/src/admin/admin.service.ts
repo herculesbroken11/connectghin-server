@@ -3,7 +3,9 @@ import {
   AdminActionType,
   AuthProvider,
   BillingCycle,
+  FoursomePostStatus,
   MembershipType,
+  NotificationType,
   PlayerRatingStatus,
   Prisma,
   ReportStatus,
@@ -26,6 +28,11 @@ import {
   AdminUsersQueryDto,
   PaginationQueryDto,
 } from '../common/dto/pagination.dto';
+import {
+  isEffectivePremium,
+  resolvePremiumSource,
+} from '../common/premium/effective-premium';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 type ModeratePlayerRatingAction = 'approve' | 'delete' | 'flag' | 'hide';
@@ -35,6 +42,7 @@ export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   private readonly notDeletedUser: Prisma.UserWhereInput = {
@@ -534,9 +542,50 @@ export class AdminService {
           ? 'estimated'
           : null;
     const primaryPhoto = profilePhotos[0] ?? null;
+    const startUtc = new Date();
+    startUtc.setUTCHours(0, 0, 0, 0);
+    const swipesUsedToday = await this.prisma.swipe.count({
+      where: { fromUserId: uid, createdAt: { gte: startUtc } },
+    });
+    const limitRow = await this.prisma.appSettings.findUnique({ where: { key: 'free_swipe_daily_limit' } });
+    const limitRaw = limitRow?.valueJson;
+    const dailyLimit =
+      typeof limitRaw === 'number' && limitRaw > 0
+        ? Math.floor(limitRaw)
+        : typeof limitRaw === 'string' && Number(limitRaw) > 0
+          ? Math.floor(Number(limitRaw))
+          : 10;
+    const effectivePremium = isEffectivePremium(user);
+    const latestSub = user.subscriptions[0];
+    const premiumSource = resolvePremiumSource({
+      ...user,
+      latestSubscriptionProvider: latestSub?.provider ?? null,
+    });
     return {
       ...safe,
       primaryProfilePhoto: primaryPhoto,
+      premium: {
+        isPremium: effectivePremium,
+        source: premiumSource,
+        membershipType: user.membershipType,
+        membershipStatus: user.membershipStatus,
+        premiumOverride: user.premiumOverride,
+        premiumOverrideExpiresAt: user.premiumOverrideExpiresAt,
+        premiumOverrideReason: user.premiumOverrideReason,
+        premiumOverrideUpdatedAt: user.premiumOverrideUpdatedAt,
+        storeSubscriptionActive: latestSub
+          ? ['ACTIVE', 'TRIALING', 'PAST_DUE'].includes(latestSub.status)
+          : false,
+      },
+      usage: {
+        connectsUsedToday: swipesUsedToday,
+        connectsRemainingToday: effectivePremium ? null : Math.max(0, dailyLimit - swipesUsedToday),
+        dailyConnectLimit: effectivePremium ? null : dailyLimit,
+        resetAtUtc: new Date(
+          Date.UTC(startUtc.getUTCFullYear(), startUtc.getUTCMonth(), startUtc.getUTCDate() + 1),
+        ).toISOString(),
+        lifetimeSwipes: swipesCount,
+      },
       stats: {
         matchesCount,
         messagesCount,
@@ -551,6 +600,164 @@ export class AdminService {
       lifetimeValueCents,
       lifetimeValueSource,
     };
+  }
+
+  async setPremiumOverride(
+    adminUserId: string,
+    userId: string,
+    input: { enabled: boolean; expiresAt?: string | null; reason?: string | null },
+  ): Promise<unknown> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        membershipType: true,
+        membershipStatus: true,
+        premiumOverride: true,
+        premiumOverrideExpiresAt: true,
+        subscriptions: { orderBy: { updatedAt: 'desc' }, take: 1, select: { provider: true, status: true } },
+      },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    let expiresAt: Date | null = null;
+    if (input.enabled && input.expiresAt) {
+      const parsed = new Date(input.expiresAt);
+      if (Number.isNaN(parsed.getTime())) {
+        throw new BadRequestException('Invalid expiresAt');
+      }
+      expiresAt = parsed;
+    }
+
+    const previous = {
+      isPremium: isEffectivePremium(user),
+      premiumOverride: user.premiumOverride,
+      premiumOverrideExpiresAt: user.premiumOverrideExpiresAt,
+      membershipType: user.membershipType,
+      membershipStatus: user.membershipStatus,
+    };
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        premiumOverride: input.enabled,
+        premiumOverrideExpiresAt: input.enabled ? expiresAt : null,
+        premiumOverrideReason: input.enabled ? input.reason?.trim() || null : null,
+        premiumOverrideUpdatedAt: new Date(),
+        premiumOverrideByAdminId: adminUserId,
+      },
+      select: {
+        id: true,
+        email: true,
+        membershipType: true,
+        membershipStatus: true,
+        premiumOverride: true,
+        premiumOverrideExpiresAt: true,
+        premiumOverrideReason: true,
+        premiumOverrideUpdatedAt: true,
+      },
+    });
+
+    const next = {
+      isPremium: isEffectivePremium(updated),
+      premiumOverride: updated.premiumOverride,
+      premiumOverrideExpiresAt: updated.premiumOverrideExpiresAt,
+      membershipType: updated.membershipType,
+      membershipStatus: updated.membershipStatus,
+    };
+
+    await this.log(adminUserId, AdminActionType.SUBSCRIPTION_OVERRIDE, userId, {
+      action: input.enabled ? 'GRANT_PREMIUM_OVERRIDE' : 'REMOVE_PREMIUM_OVERRIDE',
+      previous,
+      next,
+      reason: input.reason ?? null,
+      expiresAt: expiresAt?.toISOString() ?? null,
+      note: 'Store subscription rows were not modified',
+    });
+
+    return {
+      ok: true,
+      user: updated,
+      premium: {
+        isPremium: next.isPremium,
+        source: resolvePremiumSource({
+          ...updated,
+          latestSubscriptionProvider: user.subscriptions[0]?.provider ?? null,
+        }),
+      },
+    };
+  }
+
+  async listFoursomeFeed(query: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    status?: string;
+    gameStyle?: string;
+  }): Promise<unknown> {
+    const page = query.page ?? 0;
+    const pageSize = Math.min(query.pageSize ?? 20, 100);
+    const where: Prisma.FoursomeFeedPostWhereInput = {};
+    if (query.status && query.status !== 'all') {
+      where.status = query.status as FoursomePostStatus;
+    }
+    if (query.gameStyle && query.gameStyle !== 'all') {
+      where.gameStyle = query.gameStyle as never;
+    }
+    if (query.search?.trim()) {
+      const s = query.search.trim();
+      where.OR = [
+        { courseName: { contains: s, mode: 'insensitive' } },
+        { city: { contains: s, mode: 'insensitive' } },
+        { notes: { contains: s, mode: 'insensitive' } },
+        { poster: { is: { email: { contains: s, mode: 'insensitive' } } } },
+        { poster: { is: { username: { contains: s, mode: 'insensitive' } } } },
+        { poster: { is: { profile: { is: { displayName: { contains: s, mode: 'insensitive' } } } } } },
+      ];
+    }
+    const [items, total] = await Promise.all([
+      this.prisma.foursomeFeedPost.findMany({
+        where,
+        skip: page * pageSize,
+        take: pageSize,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          poster: {
+            select: {
+              id: true,
+              email: true,
+              username: true,
+              membershipType: true,
+              profile: { select: { displayName: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.foursomeFeedPost.count({ where }),
+    ]);
+    return { items, total, page, pageSize };
+  }
+
+  async moderateFoursomeFeed(
+    adminUserId: string,
+    postId: string,
+    action: 'hide' | 'restore',
+  ): Promise<{ ok: true }> {
+    const post = await this.prisma.foursomeFeedPost.findUnique({ where: { id: postId } });
+    if (!post) {
+      throw new NotFoundException('Feed post not found');
+    }
+    const status = action === 'hide' ? FoursomePostStatus.CANCELED : FoursomePostStatus.OPEN;
+    await this.prisma.foursomeFeedPost.update({ where: { id: postId }, data: { status } });
+    await this.log(adminUserId, AdminActionType.REPORT_REVIEW, post.posterUserId, {
+      foursomeFeedPostId: postId,
+      moderationAction: action,
+      previousStatus: post.status,
+      nextStatus: status,
+    });
+    return { ok: true };
   }
 
   async suspend(adminUserId: string, id: string): Promise<{ ok: true }> {
@@ -700,10 +907,17 @@ export class AdminService {
     });
     await this.prisma.profile.updateMany({ where: { userId: record.userId }, data: { isGHINVerified: true } });
     await this.log(adminUserId, AdminActionType.GHIN_APPROVE, record.userId, { requestId: id });
+    void this.notificationsService.createInAppAndPush(
+      record.userId,
+      NotificationType.GHIN_APPROVED,
+      'Handicap Verified',
+      'Your handicap verification was approved. Your Handicap Verified badge is now active.',
+      { requestId: id },
+    );
     return { ok: true };
   }
 
-  /** GHINder (manual): rejection completes the attempt unsuccessfully — profile is not GHIN-verified. */
+  /** Manual rejection — profile is not handicap-verified. */
   async rejectGhin(adminUserId: string, id: string, reason: string): Promise<{ ok: true }> {
     const record = await this.prisma.gHINVerificationRequest.update({
       where: { id },
@@ -716,6 +930,15 @@ export class AdminService {
     });
     await this.prisma.profile.updateMany({ where: { userId: record.userId }, data: { isGHINVerified: false } });
     await this.log(adminUserId, AdminActionType.GHIN_REJECT, record.userId, { requestId: id, reason });
+    void this.notificationsService.createInAppAndPush(
+      record.userId,
+      NotificationType.GHIN_REJECTED,
+      'Verification update',
+      reason?.trim()
+        ? `Your handicap verification was not approved: ${reason.trim()}`
+        : 'Your handicap verification was not approved. You can review details in the app.',
+      { requestId: id },
+    );
     return { ok: true };
   }
 

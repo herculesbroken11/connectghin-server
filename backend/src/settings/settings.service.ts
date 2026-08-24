@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { MembershipType, PrivacySettings, UserSettings } from '@prisma/client';
+import { PrivacySettings, UserSettings } from '@prisma/client';
 
+import { isEffectivePremium, PREMIUM_USER_SELECT } from '../common/premium/effective-premium';
 import { normalizeProfilePhotoUrl } from '../common/utils/profile-photo-url';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -64,6 +65,7 @@ export class SettingsService {
       isPremium: boolean;
       membershipType: string;
       membershipStatus: string;
+      premiumOverride: boolean;
       isGhinVerified: boolean;
     };
     notifications: {
@@ -90,8 +92,7 @@ export class SettingsService {
       select: {
         email: true,
         username: true,
-        membershipType: true,
-        membershipStatus: true,
+        ...PREMIUM_USER_SELECT,
         profile: { select: { displayName: true, isGHINVerified: true } },
         profilePhotos: {
           orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
@@ -106,7 +107,7 @@ export class SettingsService {
 
     const displayName =
       user?.profile?.displayName?.trim() || user?.username || 'Golfer';
-    const isPremium = user?.membershipType === MembershipType.PREMIUM;
+    const isPremium = isEffectivePremium(user ?? {});
 
     return {
       profile: {
@@ -117,6 +118,7 @@ export class SettingsService {
         isPremium,
         membershipType: user?.membershipType ?? 'FREE',
         membershipStatus: user?.membershipStatus ?? 'NONE',
+        premiumOverride: user?.premiumOverride === true,
         isGhinVerified: user?.profile?.isGHINVerified === true,
       },
       notifications: {
@@ -206,6 +208,50 @@ export class SettingsService {
       );
       return { ...DEFAULT_PRIVACY };
     }
+  }
+
+  /**
+   * Non-secret legal/contact values for mobile Privacy/Terms screens.
+   * Prefer in-app routes when URLs are empty.
+   */
+  async getPublicLegal(): Promise<{
+    privacyEmail: string;
+    supportEmail: string;
+    companyDisplayName: string;
+    businessMailingAddress: string;
+    termsUrl: string;
+    privacyUrl: string;
+  }> {
+    const keys = [
+      'privacy_contact_email',
+      'support_email',
+      'support_contact_email',
+      'company_display_name',
+      'business_mailing_address',
+      'terms_url',
+      'privacy_url',
+    ] as const;
+    const rows = await this.prisma.appSettings.findMany({
+      where: { key: { in: [...keys] } },
+    });
+    const map = Object.fromEntries(rows.map((r) => [r.key, r.valueJson]));
+
+    const asString = (v: unknown, fallback: string): string => {
+      if (typeof v === 'string') return v.trim();
+      if (v == null) return fallback;
+      return String(v).trim() || fallback;
+    };
+
+    const supportFallback = asString(map.support_contact_email ?? map.support_email, 'support@connectghin.com');
+
+    return {
+      privacyEmail: asString(map.privacy_contact_email, supportFallback),
+      supportEmail: asString(map.support_email ?? map.support_contact_email, supportFallback),
+      companyDisplayName: asString(map.company_display_name, 'Connectghin'),
+      businessMailingAddress: asString(map.business_mailing_address, ''),
+      termsUrl: asString(map.terms_url, ''),
+      privacyUrl: asString(map.privacy_url, ''),
+    };
   }
 }
 

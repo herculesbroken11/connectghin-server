@@ -86,6 +86,23 @@ type UserDetail = {
   recentReportsAgainstUser: ReportRow[];
   lifetimeValueCents: number | null;
   lifetimeValueSource?: 'billing_events' | 'estimated' | null;
+  premium: {
+    isPremium: boolean;
+    source: string | null;
+    membershipType: string;
+    membershipStatus: string;
+    premiumOverride: boolean;
+    premiumOverrideExpiresAt: string | null;
+    premiumOverrideReason: string | null;
+    storeSubscriptionActive: boolean;
+  };
+  usage: {
+    connectsUsedToday: number;
+    connectsRemainingToday: number | null;
+    dailyConnectLimit: number | null;
+    resetAtUtc: string;
+    lifetimeSwipes: number;
+  };
 };
 
 const nf = new Intl.NumberFormat();
@@ -113,6 +130,38 @@ function ghinLabel(profile: ProfileDetail, latest: GhinRequest): string {
   return 'Not started';
 }
 
+function premiumSourceLabel(source: string | null): string {
+  switch (source?.toUpperCase()) {
+    case 'APP_STORE':
+    case 'APPLE':
+      return 'App Store';
+    case 'GOOGLE_PLAY':
+    case 'GOOGLE':
+      return 'Google Play';
+    case 'ADMIN':
+    case 'ADMIN_OVERRIDE':
+      return 'Admin';
+    case null:
+    case undefined:
+    case 'NONE':
+      return 'None';
+    default:
+      return 'Other';
+  }
+}
+
+function formatUtc(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone: 'UTC',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  }).format(new Date(value));
+}
+
 /** When `NEXT_PUBLIC_PUBLIC_PROFILE_URL` is set, build a link (supports `{{username}}` in the template). */
 function buildPublicProfileUrl(username: string): string | null {
   const raw = process.env.NEXT_PUBLIC_PUBLIC_PROFILE_URL?.trim();
@@ -131,6 +180,9 @@ export default function UserDetailPage() {
   const id = params.id;
   const [user, setUser] = useState<UserDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [overrideExpiresAt, setOverrideExpiresAt] = useState('');
+  const [overrideReason, setOverrideReason] = useState('');
+  const [premiumSaving, setPremiumSaving] = useState(false);
 
   const load = useCallback(() => {
     if (!id) return Promise.resolve();
@@ -187,6 +239,35 @@ export default function UserDetailPage() {
       router.push('/users');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Delete failed');
+    }
+  };
+
+  const setPremiumOverride = async (enabled: boolean) => {
+    if (!user || isDeleted) return;
+    const action = enabled ? 'grant this user a Premium admin override' : 'remove this user’s Premium admin override';
+    if (!window.confirm(`Confirm you want to ${action}. This does not modify any App Store or Google Play subscription.`)) {
+      return;
+    }
+    setPremiumSaving(true);
+    try {
+      await adminApi(`/admin/users/${id}/premium-override`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          enabled,
+          expiresAt: enabled && overrideExpiresAt ? new Date(`${overrideExpiresAt}T23:59:59.999Z`).toISOString() : null,
+          reason: enabled ? overrideReason.trim() || null : null,
+        }),
+      });
+      toast.success(enabled ? 'Premium override granted' : 'Premium override removed');
+      if (enabled) {
+        setOverrideExpiresAt('');
+        setOverrideReason('');
+      }
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Premium override failed');
+    } finally {
+      setPremiumSaving(false);
     }
   };
 
@@ -383,6 +464,82 @@ export default function UserDetailPage() {
 
               <section className={cardClass}>
                 <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
+                  <Shield className="h-4 w-4 text-connect-600 dark:text-connect-400" />
+                  GHIN verification
+                </h2>
+                <dl className="mt-4 grid gap-4 sm:grid-cols-3">
+                  <div>
+                    <dt className="text-xs font-medium text-gray-500 dark:text-gray-400">Status</dt>
+                    <dd className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
+                      {ghinLabel(user.profile, user.latestGhinRequest)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium text-gray-500 dark:text-gray-400">GHIN number</dt>
+                    <dd className="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                      {user.latestGhinRequest?.ghinNumber || '—'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium text-gray-500 dark:text-gray-400">Submitted</dt>
+                    <dd className="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                      {user.latestGhinRequest?.submittedAt
+                        ? format(new Date(user.latestGhinRequest.submittedAt), 'MMM d, yyyy h:mm a')
+                        : '—'}
+                    </dd>
+                  </div>
+                </dl>
+                <Link
+                  href="/verification"
+                  className="mt-4 inline-flex text-sm font-medium text-connect-700 hover:underline dark:text-connect-400"
+                >
+                  Open verification queue
+                </Link>
+              </section>
+
+              <section className={cardClass}>
+                <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
+                  <ArrowLeftRight className="h-4 w-4 text-violet-500" />
+                  Usage
+                </h2>
+                <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <dt className="text-xs font-medium text-gray-500 dark:text-gray-400">Connects used today</dt>
+                    <dd className="mt-1 text-xl font-semibold tabular-nums text-gray-900 dark:text-white">
+                      {nf.format(user.usage.connectsUsedToday)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium text-gray-500 dark:text-gray-400">Connects remaining today</dt>
+                    <dd className="mt-1 text-xl font-semibold tabular-nums text-gray-900 dark:text-white">
+                      {user.usage.connectsRemainingToday == null
+                        ? 'Unlimited'
+                        : nf.format(user.usage.connectsRemainingToday)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium text-gray-500 dark:text-gray-400">Daily limit</dt>
+                    <dd className="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                      {user.usage.dailyConnectLimit == null ? 'Unlimited' : nf.format(user.usage.dailyConnectLimit)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium text-gray-500 dark:text-gray-400">Resets</dt>
+                    <dd className="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                      {formatUtc(user.usage.resetAtUtc)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium text-gray-500 dark:text-gray-400">Lifetime swipes</dt>
+                    <dd className="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                      {nf.format(user.usage.lifetimeSwipes)}
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+
+              <section className={cardClass}>
+                <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
                   <Flag className="h-4 w-4 text-amber-500" />
                   Moderation & reports
                 </h2>
@@ -419,6 +576,55 @@ export default function UserDetailPage() {
               <section className={cardClass}>
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Admin actions</h2>
                 <div className="mt-4 flex flex-col gap-2">
+                  {!user.premium.premiumOverride && (
+                    <div className="mb-2 space-y-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900 dark:bg-amber-950/25">
+                      <div>
+                        <label htmlFor="premium-override-expires" className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                          Premium expiration (optional)
+                        </label>
+                        <input
+                          id="premium-override-expires"
+                          type="date"
+                          value={overrideExpiresAt}
+                          onChange={(e) => setOverrideExpiresAt(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="premium-override-reason" className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                          Reason (optional)
+                        </label>
+                        <textarea
+                          id="premium-override-reason"
+                          rows={2}
+                          maxLength={2000}
+                          value={overrideReason}
+                          onChange={(e) => setOverrideReason(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void setPremiumOverride(true)}
+                        disabled={premiumSaving || isDeleted}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-amber-950 hover:bg-amber-400 disabled:opacity-50"
+                      >
+                        <Crown className="h-4 w-4" />
+                        Grant Premium
+                      </button>
+                    </div>
+                  )}
+                  {user.premium.premiumOverride && (
+                    <button
+                      type="button"
+                      onClick={() => void setPremiumOverride(false)}
+                      disabled={premiumSaving || isDeleted}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border-2 border-amber-300 bg-white px-4 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-50 dark:bg-transparent dark:text-amber-300"
+                    >
+                      <Crown className="h-4 w-4" />
+                      Remove Premium Override
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={toggleSuspend}
@@ -494,6 +700,62 @@ export default function UserDetailPage() {
                     {isDeleted ? 'User archived' : 'Delete user'}
                   </button>
                 </div>
+              </section>
+
+              <section className={cardClass}>
+                <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
+                  <Crown className="h-4 w-4 text-amber-500" />
+                  Membership
+                </h2>
+                <dl className="mt-4 space-y-3 text-sm">
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-gray-500 dark:text-gray-400">Premium</dt>
+                    <dd className={`font-semibold ${user.premium.isPremium ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                      {user.premium.isPremium ? 'Active Premium' : 'Inactive Premium'}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-gray-500 dark:text-gray-400">Source</dt>
+                    <dd className="font-medium text-gray-900 dark:text-white">{premiumSourceLabel(user.premium.source)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-gray-500 dark:text-gray-400">Membership</dt>
+                    <dd className="text-right font-medium text-gray-900 dark:text-white">
+                      {user.premium.membershipType} · {user.premium.membershipStatus}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-gray-500 dark:text-gray-400">Admin override</dt>
+                    <dd className="font-medium text-gray-900 dark:text-white">
+                      {user.premium.premiumOverride ? 'Enabled' : 'Not enabled'}
+                    </dd>
+                  </div>
+                  {user.premium.premiumOverride && (
+                    <>
+                      <div className="flex justify-between gap-4">
+                        <dt className="text-gray-500 dark:text-gray-400">Expires</dt>
+                        <dd className="text-right font-medium text-gray-900 dark:text-white">
+                          {user.premium.premiumOverrideExpiresAt
+                            ? format(new Date(user.premium.premiumOverrideExpiresAt), 'MMM d, yyyy h:mm a')
+                            : 'No expiration'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-gray-500 dark:text-gray-400">Reason</dt>
+                        <dd className="mt-1 text-gray-900 dark:text-white">{user.premium.premiumOverrideReason || '—'}</dd>
+                      </div>
+                    </>
+                  )}
+                  <div className="border-t border-gray-100 pt-3 dark:border-gray-700">
+                    <dt className="text-gray-500 dark:text-gray-400">Store subscription</dt>
+                    <dd className="mt-1 font-medium text-gray-900 dark:text-white">
+                      {user.premium.storeSubscriptionActive ? 'Active' : 'Not active'}
+                    </dd>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Admin overrides do not modify App Store or Google Play subscriptions.
+                    </p>
+                  </div>
+                </dl>
               </section>
 
               <section className={cardClass}>

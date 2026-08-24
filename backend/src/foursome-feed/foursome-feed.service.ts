@@ -1,30 +1,24 @@
 import {
   BadRequestException,
-  ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import {
   FoursomeGameStyle,
   FoursomePostStatus,
-  MembershipStatus,
-  MembershipType,
   UserLifecycleStatus,
 } from '@prisma/client';
 
 import { ConversationsService } from '../conversations/conversations.service';
+import { isEffectivePremium, PREMIUM_USER_SELECT } from '../common/premium/effective-premium';
 import { getRatingSummariesForUsers } from '../common/utils/rating-summary';
 import { normalizeUserProfilePhotos } from '../common/utils/profile-photo-url';
 import { PrismaService } from '../prisma/prisma.service';
 
 const FREE_PREVIEW_LIMIT = 5;
 const FORBIDDEN_WORDS = /\b(betting|wagering|gambling|money game|big money game)\b/i;
-
-const ACTIVE_PREMIUM_STATUSES: MembershipStatus[] = [
-  MembershipStatus.ACTIVE,
-  MembershipStatus.TRIALING,
-  MembershipStatus.PAST_DUE,
-];
 
 export type FoursomeFeedListQuery = {
   page?: number;
@@ -52,27 +46,19 @@ export class FoursomeFeedService {
     private readonly conversationsService: ConversationsService,
   ) {}
 
-  private isActivePremium(
-    membershipType?: MembershipType | null,
-    membershipStatus?: MembershipStatus | null,
-  ): boolean {
-    if (membershipType !== MembershipType.PREMIUM) return false;
-    // Canceled subscriptions stay locked; NONE covers admin-granted Premium.
-    if (membershipStatus === MembershipStatus.CANCELED) return false;
-    if (membershipStatus == null || membershipStatus === MembershipStatus.NONE) {
-      return true;
-    }
-    return ACTIVE_PREMIUM_STATUSES.includes(membershipStatus);
-  }
-
   private async assertPremium(userId: string): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { membershipType: true, membershipStatus: true },
+      select: PREMIUM_USER_SELECT,
     });
-    if (!this.isActivePremium(user?.membershipType, user?.membershipStatus)) {
-      throw new ForbiddenException(
-        'Premium membership required to post or contact golfers in Foursome Feed',
+    if (!isEffectivePremium(user ?? {})) {
+      throw new HttpException(
+        {
+          code: 'PREMIUM_REQUIRED',
+          message: 'Premium membership is required for this action.',
+          success: false,
+        },
+        HttpStatus.FORBIDDEN,
       );
     }
   }
@@ -87,9 +73,9 @@ export class FoursomeFeedService {
   async listFeed(viewerId: string, query: FoursomeFeedListQuery): Promise<unknown> {
     const viewer = await this.prisma.user.findUnique({
       where: { id: viewerId },
-      select: { membershipType: true, membershipStatus: true },
+      select: PREMIUM_USER_SELECT,
     });
-    const isPremium = this.isActivePremium(viewer?.membershipType, viewer?.membershipStatus);
+    const isPremium = isEffectivePremium(viewer ?? {});
 
     const blocked = await this.prisma.block.findMany({
       where: { OR: [{ blockerUserId: viewerId }, { blockedUserId: viewerId }] },
@@ -130,8 +116,7 @@ export class FoursomeFeedService {
             select: {
               id: true,
               username: true,
-              membershipType: true,
-              membershipStatus: true,
+              ...PREMIUM_USER_SELECT,
               profile: true,
               profilePhotos: { orderBy: { sortOrder: 'asc' }, take: 1 },
             },
@@ -156,7 +141,7 @@ export class FoursomeFeedService {
       previewLimit: FREE_PREVIEW_LIMIT,
       unlockMessage: isPremium
         ? null
-        : 'Upgrade to Premium to post open spots and contact golfers in Foursome Feed',
+        : 'Upgrade to Premium to post rounds, reply to golfers, and access additional Feed features.',
     };
   }
 
@@ -168,8 +153,7 @@ export class FoursomeFeedService {
           select: {
             id: true,
             username: true,
-            membershipType: true,
-            membershipStatus: true,
+            ...PREMIUM_USER_SELECT,
             profile: true,
             profilePhotos: { orderBy: { sortOrder: 'asc' }, take: 1 },
           },
@@ -182,9 +166,9 @@ export class FoursomeFeedService {
     const ratingMap = await getRatingSummariesForUsers(this.prisma, [row.posterUserId]);
     const viewer = await this.prisma.user.findUnique({
       where: { id: viewerId },
-      select: { membershipType: true, membershipStatus: true },
+      select: PREMIUM_USER_SELECT,
     });
-    const isPremium = this.isActivePremium(viewer?.membershipType, viewer?.membershipStatus);
+    const isPremium = isEffectivePremium(viewer ?? {});
     const mapped = this.mapPostRow(row, ratingMap.get(row.posterUserId)) as Record<string, unknown>;
     return {
       ...mapped,
@@ -216,8 +200,7 @@ export class FoursomeFeedService {
           select: {
             id: true,
             username: true,
-            membershipType: true,
-            membershipStatus: true,
+            ...PREMIUM_USER_SELECT,
             profile: true,
             profilePhotos: { orderBy: { sortOrder: 'asc' }, take: 1 },
           },
@@ -300,8 +283,10 @@ export class FoursomeFeedService {
       poster: {
         id: string;
         username: string;
-        membershipType: MembershipType;
-        membershipStatus?: MembershipStatus;
+        membershipType: import('@prisma/client').MembershipType;
+        membershipStatus?: import('@prisma/client').MembershipStatus | null;
+        premiumOverride?: boolean | null;
+        premiumOverrideExpiresAt?: Date | null;
         profile: {
           displayName: string;
           handicap: unknown;
@@ -316,10 +301,7 @@ export class FoursomeFeedService {
   ): unknown {
     const poster = normalizeUserProfilePhotos(row.poster) ?? row.poster;
     const profile = poster.profile;
-    const posterPremium = this.isActivePremium(
-      poster.membershipType,
-      poster.membershipStatus ?? MembershipStatus.NONE,
-    );
+    const posterPremium = isEffectivePremium(poster);
     return {
       id: row.id,
       userId: row.posterUserId,

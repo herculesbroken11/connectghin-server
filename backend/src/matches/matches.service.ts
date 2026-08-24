@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { isEffectivePremium, PREMIUM_USER_SELECT } from '../common/premium/effective-premium';
 import { getRatingSummariesForUsers } from '../common/utils/rating-summary';
 import { normalizeUserProfilePhotos } from '../common/utils/profile-photo-url';
 import { PrismaService } from '../prisma/prisma.service';
@@ -28,7 +29,7 @@ export class MatchesService {
           select: {
             id: true,
             username: true,
-            membershipType: true,
+            ...PREMIUM_USER_SELECT,
             profile: true,
             profilePhotos: { orderBy: { sortOrder: 'asc' }, take: 1 },
           },
@@ -37,7 +38,7 @@ export class MatchesService {
           select: {
             id: true,
             username: true,
-            membershipType: true,
+            ...PREMIUM_USER_SELECT,
             profile: true,
             profilePhotos: { orderBy: { sortOrder: 'asc' }, take: 1 },
           },
@@ -58,7 +59,7 @@ export class MatchesService {
         const rating = ratingMap.get(u.id);
         return {
           ...normalized,
-          isPremium: normalized.membershipType === 'PREMIUM',
+          isPremium: isEffectivePremium(u),
           ratingSummary: {
             averageRating: rating?.averageRating ?? null,
             reviewCount: rating?.reviewCount ?? 0,

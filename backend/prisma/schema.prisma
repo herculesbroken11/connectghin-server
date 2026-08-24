@@ -148,6 +148,12 @@ model User {
   role                UserRole            @default(USER)
   membershipType      MembershipType      @default(FREE)
   membershipStatus    MembershipStatus    @default(NONE)
+  /// Admin-granted Premium; independent of App Store / Google Play Subscription rows.
+  premiumOverride            Boolean   @default(false)
+  premiumOverrideExpiresAt   DateTime?
+  premiumOverrideReason      String?
+  premiumOverrideUpdatedAt   DateTime?
+  premiumOverrideByAdminId   String?
   refreshTokenVersion Int                 @default(0)
   isEmailVerified     Boolean             @default(false)
   lifecycleStatus     UserLifecycleStatus @default(ACTIVE)
@@ -192,6 +198,7 @@ model User {
 
   @@index([membershipType, membershipStatus])
   @@index([lifecycleStatus, isSuspended])
+  @@index([premiumOverride, premiumOverrideExpiresAt])
 }
 
 model ForgotPasswordToken {

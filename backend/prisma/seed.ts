@@ -644,8 +644,33 @@ async function main(): Promise<void> {
 
   await prisma.appSettings.upsert({
     where: { key: 'free_swipe_daily_limit' },
-    create: { key: 'free_swipe_daily_limit', valueJson: 25 },
-    update: { valueJson: 25 },
+    create: { key: 'free_swipe_daily_limit', valueJson: 10 },
+    update: { valueJson: 10 },
+  });
+  await prisma.appSettings.upsert({
+    where: { key: 'privacy_contact_email' },
+    create: { key: 'privacy_contact_email', valueJson: 'support@connectghin.com' },
+    update: {},
+  });
+  await prisma.appSettings.upsert({
+    where: { key: 'company_display_name' },
+    create: { key: 'company_display_name', valueJson: 'Connectghin' },
+    update: {},
+  });
+  await prisma.appSettings.upsert({
+    where: { key: 'business_mailing_address' },
+    create: { key: 'business_mailing_address', valueJson: '' },
+    update: {},
+  });
+  await prisma.appSettings.upsert({
+    where: { key: 'terms_url' },
+    create: { key: 'terms_url', valueJson: '' },
+    update: {},
+  });
+  await prisma.appSettings.upsert({
+    where: { key: 'privacy_url' },
+    create: { key: 'privacy_url', valueJson: '' },
+    update: {},
   });
   await prisma.appSettings.upsert({
     where: { key: 'trial_days' },

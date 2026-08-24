@@ -7,11 +7,32 @@ import { PrismaService } from '../prisma/prisma.service';
 export class GHINVerificationService {
   constructor(private readonly prisma: PrismaService) {}
 
-  me(userId: string): Promise<unknown> {
-    return this.prisma.gHINVerificationRequest.findFirst({
+  async me(userId: string): Promise<unknown> {
+    const row = await this.prisma.gHINVerificationRequest.findFirst({
       where: { userId },
       orderBy: { submittedAt: 'desc' },
     });
+    if (!row) {
+      return {
+        verification: {
+          status: 'not_submitted',
+          submittedAt: null,
+          reviewedAt: null,
+        },
+      };
+    }
+    return {
+      ...row,
+      verification: {
+        status: row.status.toLowerCase(),
+        submittedAt: row.submittedAt?.toISOString?.() ?? row.submittedAt,
+        reviewedAt: row.reviewedAt?.toISOString?.() ?? row.reviewedAt ?? null,
+        ghinNumber: row.ghinNumber,
+        submittedFirstName: row.submittedFirstName,
+        submittedLastName: row.submittedLastName,
+        rejectionReason: row.rejectionReason,
+      },
+    };
   }
 
   request(
@@ -20,9 +41,6 @@ export class GHINVerificationService {
     opts?: { submittedFirstName?: string; submittedLastName?: string },
   ): Promise<unknown> {
     // Manual flow (current): always PENDING until admin approves.
-    // GHINder + official GHIN API: see `ghin-official-api.client.ts` — uncomment the Nest client,
-    // register it in GHINVerificationModule, then after `create` await tryOfficialGhinVerify(...)
-    // when OFFICIAL_GHIN_AUTO_VERIFY is set (example wiring is in a block comment in that file).
     return this.prisma.gHINVerificationRequest.create({
       data: {
         userId,
@@ -32,19 +50,6 @@ export class GHINVerificationService {
         submittedLastName: opts?.submittedLastName?.trim() || null,
       },
     });
-
-    /*
-    // Example post-create hook (do not enable until USGA credentials and API routes are confirmed):
-    const row = await this.prisma.gHINVerificationRequest.create({ ... });
-    void this.officialGhin.tryAutoVerify({
-      requestId: row.id,
-      userId,
-      ghinNumber,
-      submittedFirstName: opts?.submittedFirstName ?? null,
-      submittedLastName: opts?.submittedLastName ?? null,
-    });
-    return row;
-    */
   }
 
   appeal(userId: string, appealNote: string): Promise<unknown> {

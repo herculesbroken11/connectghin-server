@@ -35,6 +35,54 @@ class RejectGhinDto {
   reason!: string;
 }
 
+class PremiumOverrideDto {
+  @IsBoolean()
+  enabled!: boolean;
+
+  @IsOptional()
+  @IsString()
+  expiresAt?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  reason?: string | null;
+}
+
+class FoursomeFeedAdminQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  page?: number = 0;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize?: number = 20;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  search?: string;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsString()
+  gameStyle?: string;
+}
+
+class ModerateFoursomeFeedDto {
+  @IsString()
+  @IsIn(['hide', 'restore'])
+  action!: 'hide' | 'restore';
+}
+
 class UpdateAppSettingDto {
   @IsString()
   key!: string;
@@ -192,6 +240,32 @@ export class AdminController {
   @UseGuards(JwtAuthGuard, AdminGuard)
   deleteUser(@Req() req: AuthedRequest, @Param('id') id: string): Promise<{ ok: true }> {
     return this.service.deleteUser(req.user.sub, id);
+  }
+
+  @Patch('users/:id/premium-override')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  setPremiumOverride(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() dto: PremiumOverrideDto,
+  ): Promise<unknown> {
+    return this.service.setPremiumOverride(req.user.sub, id, dto);
+  }
+
+  @Get('foursome-feed')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  listFoursomeFeed(@Query() query: FoursomeFeedAdminQueryDto): Promise<unknown> {
+    return this.service.listFoursomeFeed(query);
+  }
+
+  @Patch('foursome-feed/:id/moderate')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  moderateFoursomeFeed(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() dto: ModerateFoursomeFeedDto,
+  ): Promise<{ ok: true }> {
+    return this.service.moderateFoursomeFeed(req.user.sub, id, dto.action);
   }
 
   @Get('ghin-requests')

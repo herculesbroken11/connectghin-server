@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { MembershipStatus, MembershipType, SubscriptionStatus } from '@prisma/client';
 
+import {
+  isEffectivePremium,
+  PREMIUM_USER_SELECT,
+  resolvePremiumSource,
+} from '../common/premium/effective-premium';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 
@@ -17,8 +22,7 @@ export class BillingService {
         where: { id: userId },
         select: {
           id: true,
-          membershipType: true,
-          membershipStatus: true,
+          ...PREMIUM_USER_SELECT,
         },
       }),
       this.prisma.subscription.findFirst({
@@ -43,14 +47,17 @@ export class BillingService {
       }),
     ]);
 
-    const isPremium =
-      user?.membershipType === MembershipType.PREMIUM &&
-      (user.membershipStatus === MembershipStatus.ACTIVE ||
-        user.membershipStatus === MembershipStatus.TRIALING ||
-        user.membershipStatus === MembershipStatus.PAST_DUE);
+    const isPremium = isEffectivePremium(user ?? {});
+    const premiumSource = resolvePremiumSource({
+      ...(user ?? {}),
+      latestSubscriptionProvider: subscription?.provider ?? null,
+    });
 
     return {
       isPremium,
+      premiumSource,
+      premiumOverride: user?.premiumOverride === true,
+      premiumOverrideExpiresAt: user?.premiumOverrideExpiresAt ?? null,
       membershipType: user?.membershipType ?? MembershipType.FREE,
       membershipStatus: user?.membershipStatus ?? MembershipStatus.NONE,
       subscription,
