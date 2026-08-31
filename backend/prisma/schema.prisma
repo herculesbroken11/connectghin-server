@@ -199,8 +199,9 @@ model User {
   ratingsGiven           PlayerRatingReview[]      @relation("PlayerRatingReviewer")
   ratingsReceived        PlayerRatingReview[]      @relation("PlayerRatingReviewee")
   reviewedPlayerRatings  PlayerRatingReview[]      @relation("PlayerRatingReviewedByAdmin")
-  accountDeletionRequest AccountDeletionRequest?
-  forgotPasswordTokens  ForgotPasswordToken[]
+  accountDeletionRequest        AccountDeletionRequest?
+  accountDeletionConfirmTokens AccountDeletionConfirmToken[]
+  forgotPasswordTokens          ForgotPasswordToken[]
   foursomeFeedPosts     FoursomeFeedPost[]      @relation("FoursomeFeedPosts")
   profilePosts          ProfilePost[]
 
@@ -216,6 +217,19 @@ model ForgotPasswordToken {
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model AccountDeletionConfirmToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

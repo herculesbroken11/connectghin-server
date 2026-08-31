@@ -172,6 +172,24 @@ export class MailService {
     });
   }
 
+  async sendAccountDeletionConfirmLinkEmail(to: string, confirmUrl: string): Promise<boolean> {
+    const from = this.mailFrom();
+    if (!from) {
+      this.logger.warn('MAIL_FROM not set; cannot send deletion confirm link');
+      return false;
+    }
+    const subject = 'Confirm ConnectGHIN account deletion';
+    const text =
+      'You requested to delete your ConnectGHIN account.\n\n' +
+      `Confirm deletion (link valid 60 minutes):\n\n${confirmUrl}\n\n` +
+      'If you did not request this, ignore this email. Your account will not be deleted without confirming the link.';
+    const html =
+      '<p>You requested to delete your ConnectGHIN account.</p>' +
+      `<p><a href="${confirmUrl}">Confirm account deletion</a> (link valid 60 minutes)</p>` +
+      '<p>If you did not request this, ignore this email. Your account will not be deleted without confirming the link.</p>';
+    return this.sendMail({ from, to, subject, text, html });
+  }
+
   async sendAccountDeletionConfirmationEmail(to: string): Promise<boolean> {
     const from = this.mailFrom();
     if (!from) {

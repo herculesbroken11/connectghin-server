@@ -1,7 +1,7 @@
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { FoursomePostStatus, ReportTargetType } from '@prisma/client';
 
-import { normalizeFeedReportReason } from './privacy-safety.service';
+import { normalizeFeedReportReason, WEB_DELETION_GENERIC_MESSAGE } from './privacy-safety.service';
 import { CURRENT_TERMS_VERSION } from '../common/terms/terms-acceptance.service';
 
 describe('normalizeFeedReportReason', () => {
@@ -23,6 +23,13 @@ describe('Play compliance constants', () => {
   it('defines feed report target type', () => {
     expect(ReportTargetType.FOURSOME_FEED_POST).toBe('FOURSOME_FEED_POST');
     expect(FoursomePostStatus.CANCELED).toBe('CANCELED');
+  });
+});
+
+describe('web deletion public messaging', () => {
+  it('uses non-enumerating generic success copy', () => {
+    expect(WEB_DELETION_GENERIC_MESSAGE).toContain('confirmation link');
+    expect(WEB_DELETION_GENERIC_MESSAGE.toLowerCase()).not.toContain('not found');
   });
 });
 

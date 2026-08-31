@@ -6,12 +6,14 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   FoursomePostStatus,
   ReportTargetType,
   UserLifecycleStatus,
   UserRole,
 } from '@prisma/client';
+import { createHash, randomBytes } from 'crypto';
 
 import { normalizeProfilePhotoUrl } from '../common/utils/profile-photo-url';
 import { MailService } from '../mail/mail.service';
@@ -27,6 +29,9 @@ const FEED_REPORT_REASONS = new Set([
 ]);
 
 const MAX_REPORT_DETAILS = 2000;
+const WEB_DELETION_TOKEN_TTL_MS = 1000 * 60 * 60;
+const WEB_DELETION_GENERIC_MESSAGE =
+  'If an account exists for that email, we sent a confirmation link. Check your inbox and spam folder.';
 
 @Injectable()
 export class PrivacySafetyService {
@@ -35,6 +40,7 @@ export class PrivacySafetyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
+    private readonly config: ConfigService,
   ) {}
 
   getPrivacy(userId: string): Promise<unknown> {
@@ -235,6 +241,101 @@ export class PrivacySafetyService {
     }
   }
 
+  /**
+   * Public web flow: request a one-time email confirmation link.
+   * Never reveals whether the email exists; never deletes by email alone.
+   */
+  async requestWebDeletion(email: string): Promise<{ ok: true; message: string }> {
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        isActive: true,
+        isSuspended: true,
+        lifecycleStatus: true,
+      },
+    });
+
+    if (
+      user &&
+      user.isActive &&
+      !user.isSuspended &&
+      user.lifecycleStatus !== UserLifecycleStatus.DELETED &&
+      user.role !== UserRole.ADMIN &&
+      user.role !== UserRole.SUPER_ADMIN
+    ) {
+      const confirmToken = randomBytes(32).toString('hex');
+      const tokenHash = createHash('sha256').update(confirmToken).digest('hex');
+      await this.prisma.accountDeletionConfirmToken.deleteMany({ where: { userId: user.id } });
+      await this.prisma.accountDeletionConfirmToken.create({
+        data: {
+          userId: user.id,
+          tokenHash,
+          expiresAt: new Date(Date.now() + WEB_DELETION_TOKEN_TTL_MS),
+        },
+      });
+
+      const baseUrl = this.publicWebBaseUrl();
+      const confirmUrl = `${baseUrl}/delete-account/confirm?token=${encodeURIComponent(confirmToken)}`;
+      const sent = await this.mail.sendAccountDeletionConfirmLinkEmail(user.email, confirmUrl);
+      if (!sent) {
+        this.logger.warn(
+          `Web deletion confirm email not delivered for userId=${user.id} (mail may be misconfigured)`,
+        );
+      }
+    }
+
+    return { ok: true, message: WEB_DELETION_GENERIC_MESSAGE };
+  }
+
+  /**
+   * Public web flow: confirm deletion via emailed one-time token.
+   * Reuses the same deleteRequest() path as the authenticated in-app flow.
+   */
+  async confirmWebDeletion(token: string, reason?: string): Promise<unknown> {
+    const trimmed = token.trim();
+    if (!trimmed) {
+      throw new BadRequestException({
+        code: 'INVALID_DELETION_TOKEN',
+        message: 'Invalid or expired confirmation link',
+      });
+    }
+    const tokenHash = createHash('sha256').update(trimmed).digest('hex');
+    const row = await this.prisma.accountDeletionConfirmToken.findUnique({
+      where: { tokenHash },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            lifecycleStatus: true,
+          },
+        },
+      },
+    });
+    if (!row || row.usedAt || row.expiresAt.getTime() < Date.now()) {
+      throw new BadRequestException({
+        code: 'INVALID_DELETION_TOKEN',
+        message: 'Invalid or expired confirmation link',
+      });
+    }
+
+    await this.prisma.accountDeletionConfirmToken.update({
+      where: { id: row.id },
+      data: { usedAt: new Date() },
+    });
+
+    const deletionReason =
+      reason?.trim() && reason.trim().length > 0
+        ? `web-deletion — ${reason.trim().slice(0, 500)}`
+        : 'web-deletion';
+
+    return this.deleteRequest(row.userId, deletionReason);
+  }
+
   async getDeletionStatus(userId: string): Promise<unknown> {
     const row = await this.prisma.accountDeletionRequest.findUnique({
       where: { userId },
@@ -275,6 +376,7 @@ export class PrivacySafetyService {
     await this.prisma.$transaction(async (tx) => {
       await tx.deviceToken.deleteMany({ where: { userId } });
       await tx.forgotPasswordToken.deleteMany({ where: { userId } });
+      await tx.accountDeletionConfirmToken.deleteMany({ where: { userId } });
       await tx.profilePhoto.deleteMany({ where: { userId } });
       await tx.profilePost.deleteMany({ where: { userId } });
 
@@ -370,6 +472,14 @@ export class PrivacySafetyService {
         'ConnectGHIN account data was deleted or anonymized. Active Google Play or App Store subscriptions must be managed in the store.',
     };
   }
+
+  private publicWebBaseUrl(): string {
+    const configured =
+      this.config.get<string>('APP_PUBLIC_URL') ??
+      this.config.get<string>('APP_WEB_URL') ??
+      'https://connectghin.com';
+    return configured.replace(/\/$/, '');
+  }
 }
 
 /** Shared Feed report reason validation for foursome-feed module. */
@@ -404,5 +514,5 @@ export function clampReportDetails(details?: string): string | undefined {
   return details.trim().slice(0, MAX_REPORT_DETAILS);
 }
 
-export { FEED_REPORT_REASONS, MAX_REPORT_DETAILS };
+export { FEED_REPORT_REASONS, MAX_REPORT_DETAILS, WEB_DELETION_GENERIC_MESSAGE };
 export { ReportStatus, ReportTargetType } from '@prisma/client';
