@@ -21,6 +21,7 @@ import * as path from 'path';
 
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { SuspendedUserGuard } from '../common/guards/suspended-user.guard';
+import { TermsAcceptanceService } from '../common/terms/terms-acceptance.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { acceptImageUpload, storedImageFilename } from '../common/upload/image-upload';
 import { AddPhotoDto, UpdateProfileDto } from './profiles.dto';
@@ -43,6 +44,7 @@ export class ProfilesController {
   constructor(
     private readonly profilesService: ProfilesService,
     private readonly prisma: PrismaService,
+    private readonly terms: TermsAcceptanceService,
   ) {}
 
   @Get('me')
@@ -83,6 +85,7 @@ export class ProfilesController {
     }),
   )
   async uploadPhoto(@Req() req: AuthedRequest, @UploadedFile() file?: Express.Multer.File): Promise<unknown> {
+    await this.terms.assertAcceptedCurrentTerms(req.user.sub);
     if (!file?.filename) {
       throw new BadRequestException(
         'Image file is required (field name: file). Use a .jpg, .png, .webp, or .gif image.',

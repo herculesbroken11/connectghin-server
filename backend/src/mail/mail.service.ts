@@ -171,4 +171,24 @@ export class MailService {
         '<p>If you did not request this, ignore this email.</p>',
     });
   }
+
+  async sendAccountDeletionConfirmationEmail(to: string): Promise<boolean> {
+    const from = this.mailFrom();
+    if (!from) {
+      this.logger.warn('MAIL_FROM not set; cannot send deletion confirmation');
+      return false;
+    }
+    const subject = 'ConnectGHIN account deletion confirmation';
+    const text =
+      'Your ConnectGHIN account deletion request was processed.\n\n' +
+      'Personal account data was deleted or anonymized. Messages and moderation records may be retained in anonymized form for safety and integrity.\n\n' +
+      'If you had an active Google Play or App Store subscription, manage or cancel it in the store. Deleting your ConnectGHIN account does not automatically cancel store billing.\n\n' +
+      'If you did not request this, contact support@connectghin.com immediately.';
+    const html =
+      '<p>Your ConnectGHIN account deletion request was processed.</p>' +
+      '<p>Personal account data was deleted or anonymized. Messages and moderation records may be retained in anonymized form for safety and integrity.</p>' +
+      '<p>If you had an active Google Play or App Store subscription, manage or cancel it in the store. Deleting your ConnectGHIN account does not automatically cancel store billing.</p>' +
+      '<p>If you did not request this, contact <a href="mailto:support@connectghin.com">support@connectghin.com</a> immediately.</p>';
+    return this.sendMail({ from, to, subject, text, html });
+  }
 }

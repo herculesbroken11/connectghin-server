@@ -83,6 +83,17 @@ class CreateFoursomeFeedPostDto {
   notes?: string;
 }
 
+class ReportFoursomeFeedPostDto {
+  @IsString()
+  @MaxLength(80)
+  reason!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  details?: string;
+}
+
 type AuthedRequest = Request & { user: { sub: string } };
 
 @UseGuards(JwtAuthGuard, SuspendedUserGuard)
@@ -108,5 +119,14 @@ export class FoursomeFeedController {
   @Post(':id/contact')
   contact(@Req() req: AuthedRequest, @Param('id') id: string): Promise<unknown> {
     return this.service.contactPoster(req.user.sub, id);
+  }
+
+  @Post(':id/report')
+  report(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() dto: ReportFoursomeFeedPostDto,
+  ): Promise<unknown> {
+    return this.service.reportPost(req.user.sub, id, dto.reason, dto.details);
   }
 }

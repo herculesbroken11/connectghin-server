@@ -87,4 +87,10 @@ export class AuthController {
   me(@Req() req: AuthedRequest): Promise<unknown> {
     return this.authService.me(req.user.sub);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('accept-terms')
+  acceptTerms(@Req() req: AuthedRequest): Promise<unknown> {
+    return this.authService.acceptTerms(req.user.sub);
+  }
 }

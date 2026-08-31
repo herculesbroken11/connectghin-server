@@ -967,6 +967,9 @@ export class AdminService {
     if (query.status) {
       where.status = query.status;
     }
+    if (query.targetType) {
+      where.targetType = query.targetType;
+    }
     if (query.search?.trim()) {
       const s = query.search.trim();
       where.OR = [
@@ -991,6 +994,14 @@ export class AdminService {
         include: {
           reportedBy: { select: userSelect },
           targetUser: { select: userSelect },
+          foursomeFeedPost: {
+            select: {
+              id: true,
+              courseName: true,
+              status: true,
+              roundDate: true,
+            },
+          },
         },
       }),
       this.prisma.report.count({ where }),
@@ -1017,6 +1028,20 @@ export class AdminService {
       include: {
         reportedBy: { select: userSelect },
         targetUser: { select: userSelect },
+        foursomeFeedPost: {
+          select: {
+            id: true,
+            courseName: true,
+            city: true,
+            state: true,
+            roundDate: true,
+            teeTime: true,
+            notes: true,
+            status: true,
+            createdAt: true,
+            posterUserId: true,
+          },
+        },
       },
     });
     if (!row) {

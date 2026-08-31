@@ -70,4 +70,9 @@ export class PrivacySafetyController {
   deleteRequest(@Req() req: AuthedRequest, @Body() body: { reason?: string }): Promise<unknown> {
     return this.service.deleteRequest(req.user.sub, body.reason);
   }
+
+  @Get('account/delete-request')
+  deletionStatus(@Req() req: AuthedRequest): Promise<unknown> {
+    return this.service.getDeletionStatus(req.user.sub);
+  }
 }

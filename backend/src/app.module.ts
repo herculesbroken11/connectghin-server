@@ -21,12 +21,14 @@ import { BillingModule } from './billing/billing.module';
 import { SwipesModule } from './swipes/swipes.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { UsersModule } from './users/users.module';
+import { TermsModule } from './common/terms/terms.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     MailModule,
+    TermsModule,
     AuthModule,
     UsersModule,
     ProfilesModule,

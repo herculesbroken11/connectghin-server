@@ -14,6 +14,10 @@ import { OAuth2Client } from 'google-auth-library';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 import { MailService } from '../mail/mail.service';
+import {
+  CURRENT_TERMS_VERSION,
+  TermsAcceptanceService,
+} from '../common/terms/terms-acceptance.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AppleLoginDto,
@@ -40,6 +44,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly mailService: MailService,
     private readonly config: ConfigService,
+    private readonly terms: TermsAcceptanceService,
   ) {}
 
   async register(dto: RegisterDto): Promise<TokenPair> {
@@ -56,6 +61,8 @@ export class AuthService {
         username: dto.username,
         passwordHash: await argon2.hash(dto.password),
         authProvider: AuthProvider.EMAIL,
+        termsVersion: CURRENT_TERMS_VERSION,
+        termsAcceptedAt: new Date(),
       },
     });
     await this.prisma.profile.create({
@@ -113,6 +120,8 @@ export class AuthService {
           passwordHash: await argon2.hash(randomBytes(24).toString('hex')),
           isEmailVerified: Boolean(payload?.email_verified),
           authProvider: AuthProvider.GOOGLE,
+          termsVersion: CURRENT_TERMS_VERSION,
+          termsAcceptedAt: new Date(),
         },
       });
       await this.prisma.profile.create({
@@ -217,6 +226,8 @@ export class AuthService {
           passwordHash: await argon2.hash(randomBytes(24).toString('hex')),
           isEmailVerified: verifiedEmail || email.endsWith('@privaterelay.appleid.com'),
           authProvider: AuthProvider.APPLE,
+          termsVersion: CURRENT_TERMS_VERSION,
+          termsAcceptedAt: new Date(),
         },
       });
       await this.prisma.profile.create({
@@ -432,7 +443,7 @@ export class AuthService {
   }
 
   async me(userId: string): Promise<unknown> {
-    return this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
         id: true,
@@ -443,8 +454,22 @@ export class AuthService {
         isSuspended: true,
         lifecycleStatus: true,
         authProvider: true,
+        termsVersion: true,
+        termsAcceptedAt: true,
       },
     });
+    if (!user) return null;
+    const terms = this.terms.termsStatus(user);
+    return {
+      ...user,
+      termsAcceptedAt: terms.termsAcceptedAt,
+      currentTermsVersion: terms.currentTermsVersion,
+      needsTermsAcceptance: terms.needsTermsAcceptance,
+    };
+  }
+
+  acceptTerms(userId: string): Promise<unknown> {
+    return this.terms.acceptCurrentTerms(userId);
   }
 
   private async issueTokens(

@@ -79,6 +79,10 @@ export class AdminReportsQueryDto extends PaginationQueryDto {
   status?: ReportStatus;
 
   @IsOptional()
+  @IsIn(['USER', 'FOURSOME_FEED_POST'])
+  targetType?: 'USER' | 'FOURSOME_FEED_POST';
+
+  @IsOptional()
   @IsString()
   @MaxLength(200)
   search?: string;

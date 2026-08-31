@@ -8,6 +8,7 @@
     "build": "node scripts/run-nest.mjs build",
     "lint": "node scripts/run-eslint.mjs \"src/**/*.ts\"",
     "test:e2e": "node scripts/run-jest.mjs --config ./test/jest-e2e.json --runInBand",
+    "test:unit": "node scripts/run-jest.mjs --config ./test/jest-unit.json --runInBand",
     "prisma:generate": "node scripts/run-prisma.mjs generate",
     "prisma:migrate": "node scripts/run-prisma.mjs migrate dev",
     "prisma:seed": "node scripts/run-prisma.mjs db seed",

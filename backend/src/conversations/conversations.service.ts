@@ -81,7 +81,11 @@ export class ConversationsService {
     });
   }
 
-  async startConversation(currentUserId: string, otherUserId: string): Promise<unknown> {
+  async startConversation(
+    currentUserId: string,
+    otherUserId: string,
+    options?: { allowPremiumFeedContact?: boolean },
+  ): Promise<unknown> {
     if (currentUserId === otherUserId) {
       throw new ForbiddenException('Cannot start conversation with self');
     }
@@ -106,16 +110,23 @@ export class ConversationsService {
       where: { id: currentUserId },
       select: PREMIUM_USER_SELECT,
     });
+    const isPremium = isEffectivePremium(user ?? {});
     const premiumMessagingEnabled = await this.prisma.appSettings.findUnique({
       where: { key: 'premium_direct_message_enabled' },
     });
     const premiumDmAllowed = premiumMessagingEnabled?.valueJson === true;
+    // Cold DMs from profiles require the admin flag. Feed "Contact" is an
+    // explicit Premium entitlement and may bypass the match requirement.
     const canDirectMessage =
-      isEffectivePremium(user ?? {}) &&
+      isPremium &&
       premiumDmAllowed &&
       (!existingMatch || !existingMatch.isActive);
+    const canFeedContact =
+      options?.allowPremiumFeedContact === true &&
+      isPremium &&
+      (!existingMatch || !existingMatch.isActive);
 
-    if ((!existingMatch || !existingMatch.isActive) && !canDirectMessage) {
+    if ((!existingMatch || !existingMatch.isActive) && !canDirectMessage && !canFeedContact) {
       throw new ForbiddenException('Match required to start conversation');
     }
 
@@ -149,6 +160,25 @@ export class ConversationsService {
     });
     if (!participant) {
       throw new ForbiddenException('Not a participant in this conversation');
+    }
+    const others = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId, userId: { not: userId } },
+      select: { userId: true },
+    });
+    if (others.length > 0) {
+      const otherIds = others.map((o) => o.userId);
+      const block = await this.prisma.block.findFirst({
+        where: {
+          OR: [
+            { blockerUserId: userId, blockedUserId: { in: otherIds } },
+            { blockerUserId: { in: otherIds }, blockedUserId: userId },
+          ],
+        },
+        select: { id: true },
+      });
+      if (block) {
+        throw new ForbiddenException('Conversation blocked by privacy/safety rules');
+      }
     }
     const message = await this.prisma.message.create({
       data: { conversationId, senderId: userId, body },

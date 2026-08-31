@@ -107,6 +107,11 @@ enum ReportStatus {
   DISMISSED
 }
 
+enum ReportTargetType {
+  USER
+  FOURSOME_FEED_POST
+}
+
 enum PlayerRatingStatus {
   PENDING
   APPROVED
@@ -165,6 +170,9 @@ model User {
   lastLoginAt         DateTime?
   authProvider        AuthProvider        @default(EMAIL)
   appleUserId         String?             @unique
+  /// ISO date string of Terms version last accepted (e.g. 2026-08-31).
+  termsVersion        String?
+  termsAcceptedAt     DateTime?
 
   profile                Profile?
   profilePhotos          ProfilePhoto[]
@@ -437,23 +445,29 @@ model DeviceToken {
 }
 
 model Report {
-  id                String       @id @default(cuid())
-  reportedByUserId  String
-  targetUserId      String
-  reason            String
-  details           String?
-  adminNotes        String?
-  status            ReportStatus @default(OPEN)
-  createdAt         DateTime     @default(now())
-  reviewedAt        DateTime?
-  reviewedByAdminId String?
+  id                 String           @id @default(cuid())
+  reportedByUserId   String
+  targetUserId       String
+  /// USER = report a person; FOURSOME_FEED_POST = report a Feed post (targetUserId = poster).
+  targetType         ReportTargetType @default(USER)
+  foursomeFeedPostId String?
+  reason             String
+  details            String?
+  adminNotes         String?
+  status             ReportStatus     @default(OPEN)
+  createdAt          DateTime         @default(now())
+  reviewedAt         DateTime?
+  reviewedByAdminId  String?
 
-  reportedBy      User  @relation("ReportsMade", fields: [reportedByUserId], references: [id], onDelete: Cascade)
-  targetUser      User  @relation("ReportsReceived", fields: [targetUserId], references: [id], onDelete: Cascade)
-  reviewedByAdmin User? @relation("ReportReviewedBy", fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+  reportedBy       User              @relation("ReportsMade", fields: [reportedByUserId], references: [id], onDelete: Cascade)
+  targetUser       User              @relation("ReportsReceived", fields: [targetUserId], references: [id], onDelete: Cascade)
+  reviewedByAdmin  User?             @relation("ReportReviewedBy", fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+  foursomeFeedPost FoursomeFeedPost? @relation(fields: [foursomeFeedPostId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
   @@index([targetUserId, status])
+  @@index([targetType, status, createdAt])
+  @@index([foursomeFeedPostId, status])
 }
 
 model PlayerRatingReview {
@@ -551,12 +565,14 @@ model AppSettings {
 }
 
 model AccountDeletionRequest {
-  id          String   @id @default(cuid())
-  userId      String   @unique
-  reason      String?
-  requestedAt DateTime @default(now())
-  processedAt DateTime?
-  status      String   @default("PENDING")
+  id             String    @id @default(cuid())
+  userId         String    @unique
+  reason         String?
+  requestedAt    DateTime  @default(now())
+  processedAt    DateTime?
+  /// PENDING | PROCESSING | COMPLETED | FAILED
+  status         String    @default("PENDING")
+  failureReason  String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -580,7 +596,8 @@ model FoursomeFeedPost {
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
-  poster User @relation("FoursomeFeedPosts", fields: [posterUserId], references: [id], onDelete: Cascade)
+  poster  User     @relation("FoursomeFeedPosts", fields: [posterUserId], references: [id], onDelete: Cascade)
+  reports Report[]
 
   @@index([status, roundDate])
   @@index([posterUserId, createdAt])

@@ -29,8 +29,21 @@ type ReportDetail = {
   createdAt: string;
   reviewedAt?: string | null;
   severity: 'HIGH' | 'MEDIUM' | 'LOW';
+  targetType?: 'USER' | 'FOURSOME_FEED_POST';
   reportedBy: UserBrief;
   targetUser: UserBrief;
+  foursomeFeedPost?: {
+    id: string;
+    courseName: string;
+    city?: string | null;
+    state?: string | null;
+    roundDate: string;
+    teeTime: string;
+    notes?: string | null;
+    status: string;
+    createdAt: string;
+    posterUserId: string;
+  } | null;
 };
 
 type AppSetting = { key: string; valueJson: unknown };
@@ -206,6 +219,34 @@ export default function ReportDetailPage() {
     }
   };
 
+  const runHideFeedPost = async () => {
+    if (!report?.foursomeFeedPost?.id) return;
+    try {
+      await adminApi(`/admin/foursome-feed/${report.foursomeFeedPost.id}/moderate`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'hide' }),
+      });
+      toast.success('Feed post hidden');
+      await load();
+    } catch {
+      toast.error('Hide failed');
+    }
+  };
+
+  const runRestoreFeedPost = async () => {
+    if (!report?.foursomeFeedPost?.id) return;
+    try {
+      await adminApi(`/admin/foursome-feed/${report.foursomeFeedPost.id}/moderate`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'restore' }),
+      });
+      toast.success('Feed post restored');
+      await load();
+    } catch {
+      toast.error('Restore failed');
+    }
+  };
+
   const statusLabel =
     report?.status === 'OPEN'
       ? 'Open'
@@ -295,6 +336,59 @@ export default function ReportDetailPage() {
                 </Link>
               </div>
             </section>
+
+            {report.targetType === 'FOURSOME_FEED_POST' && report.foursomeFeedPost && (
+              <section className={card}>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Reported Feed post
+                </h2>
+                <div className="mt-3 space-y-2 text-sm text-gray-700 dark:text-gray-300">
+                  <p>
+                    <span className="font-semibold text-gray-900 dark:text-white">Course:</span>{' '}
+                    {report.foursomeFeedPost.courseName}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-gray-900 dark:text-white">When:</span>{' '}
+                    {format(new Date(report.foursomeFeedPost.roundDate), 'MMM d, yyyy')} ·{' '}
+                    {report.foursomeFeedPost.teeTime}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-gray-900 dark:text-white">Status:</span>{' '}
+                    {report.foursomeFeedPost.status}
+                  </p>
+                  {report.foursomeFeedPost.notes?.trim() ? (
+                    <p className="rounded-lg bg-gray-50 p-3 dark:bg-gray-900/40">
+                      {report.foursomeFeedPost.notes}
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {report.foursomeFeedPost.status !== 'CANCELED' ? (
+                      <button
+                        type="button"
+                        onClick={() => void runHideFeedPost()}
+                        className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700"
+                      >
+                        Hide post
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void runRestoreFeedPost()}
+                        className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+                      >
+                        Restore post
+                      </button>
+                    )}
+                    <Link
+                      href="/feed"
+                      className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-800 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                    >
+                      Open Feed admin
+                    </Link>
+                  </div>
+                </div>
+              </section>
+            )}
 
             <section className={card}>
               <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Report timeline</h2>

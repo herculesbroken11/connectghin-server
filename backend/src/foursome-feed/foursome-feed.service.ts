@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -8,13 +9,19 @@ import {
 import {
   FoursomeGameStyle,
   FoursomePostStatus,
+  ReportTargetType,
   UserLifecycleStatus,
 } from '@prisma/client';
 
 import { ConversationsService } from '../conversations/conversations.service';
 import { isEffectivePremium, PREMIUM_USER_SELECT } from '../common/premium/effective-premium';
+import { TermsAcceptanceService } from '../common/terms/terms-acceptance.service';
 import { getRatingSummariesForUsers } from '../common/utils/rating-summary';
 import { normalizeUserProfilePhotos } from '../common/utils/profile-photo-url';
+import {
+  clampReportDetails,
+  normalizeFeedReportReason,
+} from '../privacy-safety/privacy-safety.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 const FREE_PREVIEW_LIMIT = 5;
@@ -44,6 +51,7 @@ export class FoursomeFeedService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly conversationsService: ConversationsService,
+    private readonly terms: TermsAcceptanceService,
   ) {}
 
   private async assertPremium(userId: string): Promise<void> {
@@ -178,6 +186,7 @@ export class FoursomeFeedService {
   }
 
   async createPost(userId: string, dto: CreateFoursomeFeedPostDto): Promise<unknown> {
+    await this.terms.assertAcceptedCurrentTerms(userId);
     await this.assertPremium(userId);
     this.validateCreateDto(dto);
 
@@ -230,8 +239,83 @@ export class FoursomeFeedService {
     const conversation = await this.conversationsService.startConversation(
       viewerId,
       post.posterUserId,
+      { allowPremiumFeedContact: true },
     );
     return { ok: true, conversation, unlocked: true };
+  }
+
+  async reportPost(
+    reporterUserId: string,
+    postId: string,
+    reasonRaw: string,
+    details?: string,
+  ): Promise<{
+    success: true;
+    reportId: string;
+    status: 'pending';
+  }> {
+    const reason = normalizeFeedReportReason(reasonRaw);
+    const detailsClamped = clampReportDetails(details);
+    const post = await this.prisma.foursomeFeedPost.findUnique({
+      where: { id: postId },
+      select: { id: true, posterUserId: true, status: true },
+    });
+    if (!post) {
+      throw new NotFoundException({
+        code: 'POST_NOT_FOUND',
+        message: 'Feed post not found',
+      });
+    }
+    if (post.posterUserId === reporterUserId) {
+      throw new BadRequestException({
+        code: 'INVALID_REPORT_TARGET',
+        message: 'You cannot report your own post',
+      });
+    }
+    const openDuplicate = await this.prisma.report.findFirst({
+      where: {
+        reportedByUserId: reporterUserId,
+        foursomeFeedPostId: postId,
+        status: 'OPEN',
+      },
+      select: { id: true },
+    });
+    if (openDuplicate) {
+      throw new ConflictException({
+        code: 'DUPLICATE_REPORT',
+        message: 'You already have an open report for this post',
+        reportId: openDuplicate.id,
+      });
+    }
+    try {
+      const created = await this.prisma.report.create({
+        data: {
+          reportedByUserId: reporterUserId,
+          targetUserId: post.posterUserId,
+          targetType: ReportTargetType.FOURSOME_FEED_POST,
+          foursomeFeedPostId: post.id,
+          reason,
+          details: detailsClamped,
+        },
+      });
+      return {
+        success: true,
+        reportId: created.id,
+        status: 'pending',
+      };
+    } catch (e: unknown) {
+      const code =
+        e && typeof e === 'object' && 'code' in e
+          ? String((e as { code?: string }).code)
+          : '';
+      if (code === 'P2002') {
+        throw new ConflictException({
+          code: 'DUPLICATE_REPORT',
+          message: 'You already have an open report for this post',
+        });
+      }
+      throw e;
+    }
   }
 
   private validateCreateDto(dto: CreateFoursomeFeedPostDto): void {

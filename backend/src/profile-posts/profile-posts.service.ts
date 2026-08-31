@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import { TermsAcceptanceService } from '../common/terms/terms-acceptance.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 export function normalizePostImageUrl(stored: string | null | undefined): string | null {
@@ -23,7 +24,10 @@ export function normalizePostImageUrl(stored: string | null | undefined): string
 
 @Injectable()
 export class ProfilePostsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly terms: TermsAcceptanceService,
+  ) {}
 
   async listForUser(
     viewerId: string,
@@ -57,6 +61,7 @@ export class ProfilePostsService {
     userId: string,
     input: { body?: string; imageUrl?: string },
   ): Promise<unknown> {
+    await this.terms.assertAcceptedCurrentTerms(userId);
     const body = input.body?.trim() || null;
     const imageUrl = input.imageUrl?.trim() ? normalizePostImageUrl(input.imageUrl.trim()) : null;
     if (!body && !imageUrl) {
