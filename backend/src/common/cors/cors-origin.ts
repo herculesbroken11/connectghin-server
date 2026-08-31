@@ -27,7 +27,7 @@ export function createCorsOriginValidator(allowedOrigins: readonly string[]): Co
       callback(null, true);
       return;
     }
-    callback(new Error(`Origin ${origin} is not allowed by CORS`), false);
+    callback(null, false);
   };
 }
 
@@ -39,7 +39,7 @@ export function resolveCorsOriginOption(raw: string | undefined): CorsOptions['o
         callback(null, true);
         return;
       }
-      callback(new Error('CORS_ORIGIN is not configured'), false);
+      callback(null, false);
     };
   }
   return createCorsOriginValidator(allowedOrigins);
