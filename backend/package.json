@@ -13,7 +13,10 @@
     "prisma:migrate": "node scripts/run-prisma.mjs migrate dev",
     "prisma:seed": "node scripts/run-prisma.mjs db seed",
     "prisma:seed-test-users": "node -r ts-node/register/transpile-only prisma/seed-test-users.ts",
-    "seed:test-users:api": "node -r ts-node/register/transpile-only scripts/seed-test-users-via-api.ts"
+    "seed:test-users:api": "node -r ts-node/register/transpile-only scripts/seed-test-users-via-api.ts",
+    "prepare:google-play-reviewers": "node -r ts-node/register/transpile-only scripts/prepare-google-play-reviewers.ts",
+    "verify:google-play-reviewers-auth": "node -r ts-node/register/transpile-only scripts/verify-google-play-reviewer-auth.ts",
+    "cleanup:google-play-reviewers": "node -r ts-node/register/transpile-only scripts/cleanup-google-play-reviewers.ts"
   },
   "prisma": {
     "seed": "node scripts/run-ts-node.mjs --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
