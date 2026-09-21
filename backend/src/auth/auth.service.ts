@@ -14,6 +14,7 @@ import { OAuth2Client } from 'google-auth-library';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 import { MailService } from '../mail/mail.service';
+import { isEffectivePremium } from '../common/premium/effective-premium';
 import {
   CURRENT_TERMS_VERSION,
   TermsAcceptanceService,
@@ -451,6 +452,8 @@ export class AuthService {
         username: true,
         membershipType: true,
         membershipStatus: true,
+        premiumOverride: true,
+        premiumOverrideExpiresAt: true,
         isSuspended: true,
         lifecycleStatus: true,
         authProvider: true,
@@ -460,8 +463,10 @@ export class AuthService {
     });
     if (!user) return null;
     const terms = this.terms.termsStatus(user);
+    const { premiumOverride: _po, premiumOverrideExpiresAt: _pe, ...safe } = user;
     return {
-      ...user,
+      ...safe,
+      isPremium: isEffectivePremium(user),
       termsAcceptedAt: terms.termsAcceptedAt,
       currentTermsVersion: terms.currentTermsVersion,
       needsTermsAcceptance: terms.needsTermsAcceptance,

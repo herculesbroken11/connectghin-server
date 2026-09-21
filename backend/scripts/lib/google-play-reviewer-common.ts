@@ -186,7 +186,7 @@ export function assertIdentity(
   }
 }
 
-export function futureRoundDateIso(daysAhead = 14): string {
+export function futureRoundDateIso(daysAhead = 45): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() + daysAhead);
   d.setUTCHours(16, 0, 0, 0);

@@ -326,7 +326,7 @@ async function ensureFeedPost(
       city: REVIEW_LOCATION.city,
       state: REVIEW_LOCATION.state,
       // Dynamic future date (not a fixed calendar day that can go stale in source).
-      roundDate: futureRoundDateIso(3),
+      roundDate: futureRoundDateIso(45),
       teeTime: '9:00 AM',
       spotsNeeded: 2,
       gameStyle: 'CASUAL',

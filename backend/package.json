@@ -16,6 +16,7 @@
     "seed:test-users:api": "node -r ts-node/register/transpile-only scripts/seed-test-users-via-api.ts",
     "prepare:google-play-reviewers": "node -r ts-node/register/transpile-only scripts/prepare-google-play-reviewers.ts",
     "verify:google-play-reviewers-auth": "node -r ts-node/register/transpile-only scripts/verify-google-play-reviewer-auth.ts",
+    "refresh:google-play-reviewer-feed": "node -r ts-node/register/transpile-only scripts/refresh-google-play-reviewer-feed.ts",
     "cleanup:google-play-reviewers": "node -r ts-node/register/transpile-only scripts/cleanup-google-play-reviewers.ts"
   },
   "prisma": {
