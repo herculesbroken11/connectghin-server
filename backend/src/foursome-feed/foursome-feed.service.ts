@@ -33,6 +33,58 @@ export type FoursomeFeedListQuery = {
   gameStyle?: FoursomeGameStyle | 'ALL';
 };
 
+/**
+ * Poster IDs hidden from the viewer's Feed.
+ * Includes both sides of any block involving the viewer, but never the viewer
+ * themselves — own OPEN posts must remain visible in The Feed.
+ */
+export function resolveFeedExcludedPosterIds(
+  viewerId: string,
+  blocks: Array<{ blockerUserId: string; blockedUserId: string }>,
+): string[] {
+  const excluded = new Set<string>();
+  for (const b of blocks) {
+    excluded.add(b.blockerUserId);
+    excluded.add(b.blockedUserId);
+  }
+  excluded.delete(viewerId);
+  return Array.from(excluded);
+}
+
+/** Pure list filters used by listFeed (unit-tested). */
+export function buildFoursomeFeedListWhere(input: {
+  viewerId: string;
+  blocks: Array<{ blockerUserId: string; blockedUserId: string }>;
+  gameStyle?: FoursomeGameStyle | 'ALL';
+  now?: Date;
+}): {
+  status: typeof FoursomePostStatus.OPEN;
+  posterUserId?: { notIn: string[] };
+  roundDate: { gte: Date };
+  gameStyle?: FoursomeGameStyle;
+  poster: {
+    isSuspended: false;
+    isActive: true;
+    lifecycleStatus: typeof UserLifecycleStatus.ACTIVE;
+  };
+} {
+  const excludedIds = resolveFeedExcludedPosterIds(input.viewerId, input.blocks);
+  const now = input.now ?? new Date();
+  return {
+    status: FoursomePostStatus.OPEN,
+    ...(excludedIds.length > 0 ? { posterUserId: { notIn: excludedIds } } : {}),
+    roundDate: { gte: now },
+    ...(input.gameStyle && input.gameStyle !== 'ALL'
+      ? { gameStyle: input.gameStyle as FoursomeGameStyle }
+      : {}),
+    poster: {
+      isSuspended: false,
+      isActive: true,
+      lifecycleStatus: UserLifecycleStatus.ACTIVE,
+    },
+  };
+}
+
 export type CreateFoursomeFeedPostDto = {
   courseName: string;
   city?: string;
@@ -89,29 +141,16 @@ export class FoursomeFeedService {
       where: { OR: [{ blockerUserId: viewerId }, { blockedUserId: viewerId }] },
       select: { blockerUserId: true, blockedUserId: true },
     });
-    const excludedIds = new Set<string>([viewerId]);
-    blocked.forEach((b) => {
-      excludedIds.add(b.blockerUserId);
-      excludedIds.add(b.blockedUserId);
-    });
 
     const page = query.page ?? 0;
     const requestedSize = Math.min(query.pageSize ?? 20, 50);
     const take = isPremium ? requestedSize : Math.min(requestedSize, FREE_PREVIEW_LIMIT);
 
-    const where = {
-      status: FoursomePostStatus.OPEN,
-      posterUserId: { notIn: Array.from(excludedIds) },
-      roundDate: { gte: new Date() },
-      ...(query.gameStyle && query.gameStyle !== 'ALL'
-        ? { gameStyle: query.gameStyle as FoursomeGameStyle }
-        : {}),
-      poster: {
-        isSuspended: false,
-        isActive: true,
-        lifecycleStatus: UserLifecycleStatus.ACTIVE,
-      },
-    };
+    const where = buildFoursomeFeedListWhere({
+      viewerId,
+      blocks: blocked,
+      gameStyle: query.gameStyle,
+    });
 
     const [rows, total] = await Promise.all([
       this.prisma.foursomeFeedPost.findMany({
