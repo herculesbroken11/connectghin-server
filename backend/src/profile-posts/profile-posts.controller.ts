@@ -1,29 +1,50 @@
 import {
+  ArgumentsHost,
   BadRequestException,
   Body,
+  Catch,
   Controller,
   Delete,
+  ExceptionFilter,
   Get,
   Param,
   Post,
   Query,
   Req,
   UploadedFile,
+  UseFilters,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import * as fs from 'fs';
-import { diskStorage } from 'multer';
+import { diskStorage, MulterError } from 'multer';
 import * as path from 'path';
 
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { SuspendedUserGuard } from '../common/guards/suspended-user.guard';
 import { acceptImageUpload, storedImageFilename } from '../common/upload/image-upload';
+import {
+  PROFILE_POST_IMAGE_REQUIRED,
+  profilePostUploadError,
+  unsupportedProfileImageException,
+} from './profile-post-upload';
 import { normalizePostImageUrl, ProfilePostsService } from './profile-posts.service';
+
+@Catch(MulterError)
+class ProfilePostUploadExceptionFilter implements ExceptionFilter {
+  catch(exception: MulterError, host: ArgumentsHost): void {
+    const mapped = profilePostUploadError(exception)!;
+    const response = host.switchToHttp().getResponse<Response>();
+    response.status(mapped.statusCode).json({
+      statusCode: mapped.statusCode,
+      message: mapped.message,
+    });
+  }
+}
 
 const PROFILE_POSTS_DIR = path.join(process.cwd(), 'uploads', 'profile-posts');
 
@@ -80,6 +101,7 @@ export class ProfilePostsController {
   }
 
   @Post('upload')
+  @UseFilters(ProfilePostUploadExceptionFilter)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
@@ -93,7 +115,11 @@ export class ProfilePostsController {
       }),
       limits: { fileSize: 8 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
-        cb(null, acceptImageUpload(file));
+        if (acceptImageUpload(file)) {
+          cb(null, true);
+          return;
+        }
+        cb(unsupportedProfileImageException(), false);
       },
     }),
   )
@@ -103,9 +129,7 @@ export class ProfilePostsController {
     @Body() body?: { body?: string },
   ): Promise<unknown> {
     if (!file?.filename) {
-      throw new BadRequestException(
-        'Image file is required (field name: file). Use a .jpg, .png, .webp, or .gif image.',
-      );
+      throw new BadRequestException(PROFILE_POST_IMAGE_REQUIRED);
     }
     const forwarded = req.headers['x-forwarded-proto'];
     const proto =
@@ -125,7 +149,13 @@ export class ProfilePostsController {
       `${publicBase}/api/v1/uploads/profile-posts/${file.filename}`,
     )!;
     const caption = typeof body?.body === 'string' ? body.body : undefined;
-    return this.service.create(req.user.sub, { body: caption, imageUrl });
+    const storedPath = path.join(PROFILE_POSTS_DIR, file.filename);
+    try {
+      return await this.service.create(req.user.sub, { body: caption, imageUrl });
+    } catch (error) {
+      fs.unlink(storedPath, () => undefined);
+      throw error;
+    }
   }
 
   @Delete(':id')

@@ -8,6 +8,21 @@ import {
 import { TermsAcceptanceService } from '../common/terms/terms-acceptance.service';
 import { PrismaService } from '../prisma/prisma.service';
 
+export function prepareProfilePostFields(input: { body?: string; imageUrl?: string }): {
+  body: string | null;
+  imageUrl: string | null;
+} {
+  const body = input.body?.trim() || null;
+  const imageUrl = input.imageUrl?.trim() ? normalizePostImageUrl(input.imageUrl.trim()) : null;
+  if (!body && !imageUrl) {
+    throw new BadRequestException('Add a caption or a photo to post');
+  }
+  if (body && body.length > 2000) {
+    throw new BadRequestException('Caption must be 2000 characters or less');
+  }
+  return { body, imageUrl };
+}
+
 export function normalizePostImageUrl(stored: string | null | undefined): string | null {
   if (stored == null || stored.trim() === '') return null;
   const trimmed = stored.trim();
@@ -62,14 +77,7 @@ export class ProfilePostsService {
     input: { body?: string; imageUrl?: string },
   ): Promise<unknown> {
     await this.terms.assertAcceptedCurrentTerms(userId);
-    const body = input.body?.trim() || null;
-    const imageUrl = input.imageUrl?.trim() ? normalizePostImageUrl(input.imageUrl.trim()) : null;
-    if (!body && !imageUrl) {
-      throw new BadRequestException('Add a caption or a photo to post');
-    }
-    if (body && body.length > 2000) {
-      throw new BadRequestException('Caption must be 2000 characters or less');
-    }
+    const { body, imageUrl } = prepareProfilePostFields(input);
 
     const created = await this.prisma.profilePost.create({
       data: { userId, body, imageUrl },

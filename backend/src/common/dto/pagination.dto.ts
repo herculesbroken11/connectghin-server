@@ -45,6 +45,12 @@ export class AdminUsersQueryDto extends PaginationQueryDto {
   @IsEnum(MembershipType)
   membershipType?: MembershipType;
 
+  /** When set, filters by effective Premium (store subscription or valid admin override). */
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  effectivePremium?: boolean;
+
   @IsOptional()
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()

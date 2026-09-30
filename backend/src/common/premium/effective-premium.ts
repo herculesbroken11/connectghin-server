@@ -1,4 +1,4 @@
-import { MembershipStatus, MembershipType } from '@prisma/client';
+import { AuthProvider, MembershipStatus, MembershipType, Prisma } from '@prisma/client';
 
 /** Fields needed to resolve effective Premium entitlement. */
 export type PremiumUserFields = {
@@ -59,3 +59,72 @@ export const PREMIUM_USER_SELECT = {
   premiumOverride: true,
   premiumOverrideExpiresAt: true,
 } as const;
+
+/**
+ * Prisma form of {@link isEffectivePremium}.
+ * Store membership and admin override stay separate columns; this only matches rows
+ * that currently have one of those entitlements.
+ */
+export function effectivePremiumWhere(now: Date = new Date()): Prisma.UserWhereInput {
+  return {
+    OR: [
+      {
+        membershipType: MembershipType.PREMIUM,
+        membershipStatus: { in: STORE_ACTIVE },
+      },
+      {
+        premiumOverride: true,
+        OR: [
+          { premiumOverrideExpiresAt: null },
+          { premiumOverrideExpiresAt: { gt: now } },
+        ],
+      },
+    ],
+  };
+}
+
+export type AdminUserListFilter = {
+  search?: string;
+  membershipType?: MembershipType;
+  effectivePremium?: boolean;
+  isSuspended?: boolean;
+  isActive?: boolean;
+  isGHINVerified?: boolean;
+  authProvider?: AuthProvider;
+};
+
+/** Users list where-clause. Premium/free segments use effective entitlement, not raw membership. */
+export function buildAdminUsersWhere(
+  notDeleted: Prisma.UserWhereInput,
+  query: AdminUserListFilter,
+  now: Date = new Date(),
+): Prisma.UserWhereInput {
+  const where: Prisma.UserWhereInput = { ...notDeleted };
+  if (query.effectivePremium === true) {
+    where.AND = [effectivePremiumWhere(now)];
+  } else if (query.effectivePremium === false) {
+    where.AND = [{ NOT: effectivePremiumWhere(now) }];
+  }
+  if (query.membershipType) {
+    where.membershipType = query.membershipType;
+  }
+  if (query.isSuspended !== undefined) {
+    where.isSuspended = query.isSuspended;
+  }
+  if (query.isActive !== undefined) {
+    where.isActive = query.isActive;
+  }
+  if (query.search) {
+    where.OR = [
+      { email: { contains: query.search, mode: 'insensitive' } },
+      { username: { contains: query.search, mode: 'insensitive' } },
+    ];
+  }
+  if (query.isGHINVerified !== undefined) {
+    where.profile = { is: { isGHINVerified: query.isGHINVerified } };
+  }
+  if (query.authProvider) {
+    where.authProvider = query.authProvider;
+  }
+  return where;
+}

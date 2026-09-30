@@ -29,6 +29,9 @@ import {
   PaginationQueryDto,
 } from '../common/dto/pagination.dto';
 import {
+  buildAdminUsersWhere,
+  effectivePremiumWhere,
+  hasActiveStorePremium,
   isEffectivePremium,
   resolvePremiumSource,
 } from '../common/premium/effective-premium';
@@ -110,7 +113,9 @@ export class AdminService {
       this.prisma.user.count({
         where: { ...this.notDeletedUser, isActive: true, isSuspended: false },
       }),
-      this.prisma.user.count({ where: { ...this.notDeletedUser, membershipType: MembershipType.PREMIUM } }),
+      this.prisma.user.count({
+        where: { ...this.notDeletedUser, AND: [effectivePremiumWhere()] },
+      }),
       this.prisma.profile.count({
         where: { isGHINVerified: true, user: { is: this.notDeletedUser } },
       }),
@@ -340,6 +345,7 @@ export class AdminService {
     googleSignInUsers: number;
     appleSignInUsers: number;
   }> {
+    const premiumAsOf = new Date();
     const [
       totalUsers,
       activeUsers,
@@ -356,8 +362,12 @@ export class AdminService {
         where: { ...this.notDeletedUser, isSuspended: false, isActive: true },
       }),
       this.prisma.user.count({ where: { ...this.notDeletedUser, isSuspended: true } }),
-      this.prisma.user.count({ where: { ...this.notDeletedUser, membershipType: MembershipType.PREMIUM } }),
-      this.prisma.user.count({ where: { ...this.notDeletedUser, membershipType: MembershipType.FREE } }),
+      this.prisma.user.count({
+        where: { ...this.notDeletedUser, AND: [effectivePremiumWhere(premiumAsOf)] },
+      }),
+      this.prisma.user.count({
+        where: { ...this.notDeletedUser, AND: [{ NOT: effectivePremiumWhere(premiumAsOf) }] },
+      }),
       this.prisma.profile.count({
         where: { isGHINVerified: true, user: { is: this.notDeletedUser } },
       }),
@@ -388,28 +398,7 @@ export class AdminService {
     const page = query.page ?? 0;
     const pageSize = query.pageSize ?? 20;
     const skip = page * pageSize;
-    const where: Prisma.UserWhereInput = { ...this.notDeletedUser };
-    if (query.membershipType) {
-      where.membershipType = query.membershipType;
-    }
-    if (query.isSuspended !== undefined) {
-      where.isSuspended = query.isSuspended;
-    }
-    if (query.isActive !== undefined) {
-      where.isActive = query.isActive;
-    }
-    if (query.search) {
-      where.OR = [
-        { email: { contains: query.search, mode: 'insensitive' } },
-        { username: { contains: query.search, mode: 'insensitive' } },
-      ];
-    }
-    if (query.isGHINVerified !== undefined) {
-      where.profile = { is: { isGHINVerified: query.isGHINVerified } };
-    }
-    if (query.authProvider) {
-      where.authProvider = query.authProvider;
-    }
+    const where = buildAdminUsersWhere(this.notDeletedUser, query);
     const sortBy = query.sortBy ?? 'createdAt';
     const sortDir = query.sortDir ?? 'desc';
     const [rows, total] = await Promise.all([
@@ -428,6 +417,9 @@ export class AdminService {
     const items = rows.map(({ passwordHash: _pw, ghinRequests, ...u }) => ({
       ...u,
       lastGhinRequest: ghinRequests[0] ?? null,
+      isPremium: isEffectivePremium(u),
+      premiumSource: resolvePremiumSource(u),
+      storeSubscriptionActive: hasActiveStorePremium(u),
     }));
     return { items, total, page, pageSize };
   }

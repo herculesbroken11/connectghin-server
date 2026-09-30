@@ -40,6 +40,9 @@ type UserRow = {
   username: string;
   authProvider?: string;
   membershipType: string;
+  isPremium?: boolean;
+  premiumSource?: string;
+  storeSubscriptionActive?: boolean;
   isSuspended: boolean;
   isActive: boolean;
   createdAt: string;
@@ -71,9 +74,9 @@ function segmentToQuery(segment: UserSegment): Record<string, string | boolean |
     case 'suspended':
       return { isSuspended: true };
     case 'premium':
-      return { membershipType: 'PREMIUM' };
+      return { effectivePremium: true };
     case 'free':
-      return { membershipType: 'FREE' };
+      return { effectivePremium: false };
     case 'verified':
       return { isGHINVerified: true };
     default:
@@ -470,13 +473,19 @@ export default function UsersPage() {
                       <td className="px-4 py-3">
                         <span
                           className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                            user.membershipType === 'PREMIUM'
+                            user.isPremium
                               ? 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-100'
                               : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
                           }`}
                         >
-                          {user.membershipType === 'PREMIUM' ? 'Premium' : 'Free'}
+                          {user.isPremium ? 'Premium' : 'Free'}
                         </span>
+                        {user.isPremium && user.premiumSource === 'ADMIN' && !user.storeSubscriptionActive && (
+                          <span className="mt-1 block text-[11px] text-gray-500 dark:text-gray-400">Admin override</span>
+                        )}
+                        {!user.isPremium && user.membershipType === 'PREMIUM' && (
+                          <span className="mt-1 block text-[11px] text-gray-500 dark:text-gray-400">Expired</span>
+                        )}
                       </td>
                     )}
                     {visible.ghin && (
