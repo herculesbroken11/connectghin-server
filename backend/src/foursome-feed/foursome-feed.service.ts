@@ -27,6 +27,19 @@ import { PrismaService } from '../prisma/prisma.service';
 const FREE_PREVIEW_LIMIT = 5;
 const FORBIDDEN_WORDS = /\b(betting|wagering|gambling|money game|big money game)\b/i;
 
+/**
+ * Value written to FoursomeFeedPost.gameStyle.
+ * Unknown or missing input is rejected. It is not stored as CASUAL.
+ */
+export function persistableFoursomeGameStyle(value: unknown): FoursomeGameStyle {
+  const normalized = typeof value === 'string' ? value.trim().toUpperCase() : value;
+  if (normalized === FoursomeGameStyle.CASUAL) return FoursomeGameStyle.CASUAL;
+  if (normalized === FoursomeGameStyle.SERIOUS) return FoursomeGameStyle.SERIOUS;
+  if (normalized === FoursomeGameStyle.TOURNAMENT) return FoursomeGameStyle.TOURNAMENT;
+  if (normalized === FoursomeGameStyle.COMPETITIVE) return FoursomeGameStyle.COMPETITIVE;
+  throw new BadRequestException('Invalid gameStyle');
+}
+
 export type FoursomeFeedListQuery = {
   page?: number;
   pageSize?: number;
@@ -228,6 +241,7 @@ export class FoursomeFeedService {
     await this.terms.assertAcceptedCurrentTerms(userId);
     await this.assertPremium(userId);
     this.validateCreateDto(dto);
+    const gameStyle = persistableFoursomeGameStyle(dto.gameStyle);
 
     const created = await this.prisma.foursomeFeedPost.create({
       data: {
@@ -238,7 +252,7 @@ export class FoursomeFeedService {
         roundDate: new Date(dto.roundDate),
         teeTime: dto.teeTime.trim(),
         spotsNeeded: dto.spotsNeeded,
-        gameStyle: dto.gameStyle,
+        gameStyle,
         handicapPreference: dto.handicapPreference?.trim() || null,
         feeLabel: dto.feeLabel?.trim() || null,
         notes: dto.notes?.trim() || null,
@@ -370,9 +384,7 @@ export class FoursomeFeedService {
     if (!Number.isInteger(dto.spotsNeeded) || dto.spotsNeeded < 1 || dto.spotsNeeded > 3) {
       throw new BadRequestException('spotsNeeded must be between 1 and 3');
     }
-    if (!Object.values(FoursomeGameStyle).includes(dto.gameStyle)) {
-      throw new BadRequestException('Invalid gameStyle');
-    }
+    persistableFoursomeGameStyle(dto.gameStyle);
     const roundDate = new Date(dto.roundDate);
     if (Number.isNaN(roundDate.getTime())) {
       throw new BadRequestException('Invalid roundDate');

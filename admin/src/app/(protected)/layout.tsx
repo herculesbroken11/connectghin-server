@@ -1,23 +1,20 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 import { AdminSidebar } from '../../components/admin/AdminSidebar';
 import { AdminUiCopyProvider } from '../../context/AdminUiCopyContext';
 import { ThemeProvider } from '../../context/ThemeContext';
 import { ToastProvider } from '../../context/ToastContext';
-import { isAdminLoggedIn } from '../../lib/api';
+import { expireAdminSession, isAdminAccessTokenExpired, isAdminLoggedIn } from '../../lib/api';
 
 export default function ProtectedLayout({ children }: { children: ReactNode }) {
-  const router = useRouter();
-
   useEffect(() => {
-    if (!isAdminLoggedIn()) {
-      router.replace('/login');
+    if (!isAdminLoggedIn() || isAdminAccessTokenExpired()) {
+      expireAdminSession();
     }
-  }, [router]);
+  }, []);
 
   return (
     <ThemeProvider>

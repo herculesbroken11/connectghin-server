@@ -2,6 +2,7 @@ import { FoursomeGameStyle, FoursomePostStatus, UserLifecycleStatus } from '@pri
 
 import {
   buildFoursomeFeedListWhere,
+  persistableFoursomeGameStyle,
   resolveFeedExcludedPosterIds,
 } from './foursome-feed.service';
 
@@ -77,6 +78,60 @@ describe('Foursome Feed list filters', () => {
       now,
     });
     expect(all.gameStyle).toBeUndefined();
+  });
+
+  it('keeps Casual, Serious, and Tournament on separate filters', () => {
+    const casual = buildFoursomeFeedListWhere({
+      viewerId,
+      blocks: [],
+      gameStyle: 'CASUAL',
+      now,
+    });
+    const serious = buildFoursomeFeedListWhere({
+      viewerId,
+      blocks: [],
+      gameStyle: 'SERIOUS',
+      now,
+    });
+    const tournament = buildFoursomeFeedListWhere({
+      viewerId,
+      blocks: [],
+      gameStyle: 'TOURNAMENT',
+      now,
+    });
+
+    expect(casual.gameStyle).toBe(FoursomeGameStyle.CASUAL);
+    expect(serious.gameStyle).toBe(FoursomeGameStyle.SERIOUS);
+    expect(tournament.gameStyle).toBe(FoursomeGameStyle.TOURNAMENT);
+    expect(casual.gameStyle).not.toBe(serious.gameStyle);
+    expect(casual.gameStyle).not.toBe(tournament.gameStyle);
+    expect(serious.gameStyle).not.toBe(tournament.gameStyle);
+  });
+
+  it('keeps legacy COMPETITIVE posts out of Casual, Serious, and Tournament filters', () => {
+    expect(persistableFoursomeGameStyle('COMPETITIVE')).toBe(FoursomeGameStyle.COMPETITIVE);
+    expect(persistableFoursomeGameStyle('competitive')).toBe(FoursomeGameStyle.COMPETITIVE);
+
+    for (const style of ['CASUAL', 'SERIOUS', 'TOURNAMENT'] as const) {
+      const where = buildFoursomeFeedListWhere({
+        viewerId,
+        blocks: [],
+        gameStyle: style,
+        now,
+      });
+      expect(where.gameStyle).toBe(style);
+      expect(where.gameStyle).not.toBe(FoursomeGameStyle.COMPETITIVE);
+    }
+  });
+
+  it('persists Serious and Tournament without rewriting them to Casual', () => {
+    expect(persistableFoursomeGameStyle('SERIOUS')).toBe(FoursomeGameStyle.SERIOUS);
+    expect(persistableFoursomeGameStyle('serious')).toBe(FoursomeGameStyle.SERIOUS);
+    expect(persistableFoursomeGameStyle('TOURNAMENT')).toBe(FoursomeGameStyle.TOURNAMENT);
+    expect(persistableFoursomeGameStyle('CASUAL')).toBe(FoursomeGameStyle.CASUAL);
+    expect(() => persistableFoursomeGameStyle(undefined)).toThrow('Invalid gameStyle');
+    expect(() => persistableFoursomeGameStyle('')).toThrow('Invalid gameStyle');
+    expect(() => persistableFoursomeGameStyle('FUN')).toThrow('Invalid gameStyle');
   });
 
   it('requires active non-suspended posters', () => {

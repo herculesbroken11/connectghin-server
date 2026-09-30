@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { FoursomeGameStyle } from '@prisma/client';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsDateString,
   IsIn,
@@ -32,6 +32,7 @@ class FoursomeFeedListQueryDto {
   pageSize?: number = 20;
 
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toUpperCase() : value))
   @IsIn(['ALL', 'CASUAL', 'COMPETITIVE', 'TOURNAMENT', 'SERIOUS'])
   gameStyle?: FoursomeGameStyle | 'ALL' = 'ALL';
 }
@@ -64,6 +65,7 @@ class CreateFoursomeFeedPostDto {
   @Max(3)
   spotsNeeded!: number;
 
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toUpperCase() : value))
   @IsIn(['CASUAL', 'COMPETITIVE', 'TOURNAMENT', 'SERIOUS'])
   gameStyle!: FoursomeGameStyle;
 

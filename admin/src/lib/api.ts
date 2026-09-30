@@ -26,12 +26,39 @@ export function isAdminLoggedIn(): boolean {
   return Boolean(getAdminAccessToken());
 }
 
+/** True when a stored access token is missing `exp` or is already past it. */
+export function isAdminAccessTokenExpired(nowMs = Date.now()): boolean {
+  const token = getAdminAccessToken();
+  if (!token) return false;
+  const payload = decodeAdminAccessToken();
+  if (!payload || typeof payload.exp !== 'number') return true;
+  return payload.exp * 1000 <= nowMs;
+}
+
+/** Login 401 means bad credentials. Every other 401 means the admin session is no longer valid. */
+export function shouldEndAdminSession(status: number, path: string): boolean {
+  if (status !== 401) return false;
+  return path !== '/admin/auth/login';
+}
+
+let adminSessionRedirectStarted = false;
+
+export function expireAdminSession(): void {
+  if (typeof window === 'undefined') return;
+  clearAdminTokens();
+  if (adminSessionRedirectStarted) return;
+  if (window.location.pathname === '/login' || window.location.pathname.startsWith('/login/')) return;
+  adminSessionRedirectStarted = true;
+  window.location.replace('/login');
+}
+
 /** JWT payload fields included on admin login (used for top bar profile). */
 export type AdminJwtPayload = {
   sub?: string;
   email?: string;
   username?: string;
   role?: string;
+  exp?: number;
 };
 
 export function decodeAdminAccessToken(): AdminJwtPayload | null {
@@ -105,6 +132,10 @@ export async function adminApi<T>(
   init?: RequestInit,
   query?: Record<string, QueryValue>,
 ): Promise<T> {
+  if (isAdminAccessTokenExpired() && shouldEndAdminSession(401, path)) {
+    expireAdminSession();
+    return new Promise<T>(() => {});
+  }
   const token = getAdminAccessToken();
   const response = await fetch(buildAdminApiUrl(path, query), {
     ...init,
@@ -117,6 +148,10 @@ export async function adminApi<T>(
   });
   if (!response.ok) {
     const body = await response.text();
+    if (shouldEndAdminSession(response.status, path)) {
+      expireAdminSession();
+      return new Promise<T>(() => {});
+    }
     throw new Error(formatApiErrorBody(body, response.status));
   }
   if (response.status === 204) {
