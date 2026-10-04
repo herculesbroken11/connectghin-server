@@ -58,7 +58,7 @@ export class IapVerificationService {
     const statusCode = asNumber(tx.status) ?? asNumber(entry.status) ?? 2;
 
     if (!productId) {
-      throw new UnauthorizedException('Apple verification failed: missing productId');
+      throw new BadRequestException('Apple verification failed: missing productId');
     }
     this.assertAllowedProduct('APPLE_APP_STORE', productId);
 
@@ -154,7 +154,7 @@ export class IapVerificationService {
       },
     });
     if (!res.ok) {
-      throw new UnauthorizedException(`Apple verification failed (${res.status})`);
+      throw new BadRequestException(`Apple verification failed (${res.status})`);
     }
     return (await res.json()) as Record<string, unknown>;
   }
@@ -165,7 +165,7 @@ export class IapVerificationService {
     const bundleId = this.config.get<string>('APPLE_IAP_BUNDLE_ID')?.trim();
     const privateKeyRaw = this.config.get<string>('APPLE_IAP_PRIVATE_KEY') ?? '';
     if (!issuerId || !keyId || !bundleId || !privateKeyRaw.trim()) {
-      throw new UnauthorizedException('Missing Apple IAP credentials');
+      throw new BadRequestException('Missing Apple IAP credentials');
     }
 
     const now = Math.floor(Date.now() / 1000);
@@ -277,6 +277,9 @@ export class IapVerificationService {
         .filter(Boolean),
     );
     if (!allowed.has(productId)) {
+      if (provider === 'APPLE_APP_STORE') {
+        throw new BadRequestException(`Product ${productId} is not allowed for ${provider}`);
+      }
       throw new UnauthorizedException(`Product ${productId} is not allowed for ${provider}`);
     }
   }
