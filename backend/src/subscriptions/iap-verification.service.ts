@@ -25,6 +25,22 @@ type VerifiedEntitlement = {
   rawResponse?: Record<string, unknown>;
 };
 
+/** App Store Server API: transaction id is not in this environment. */
+export const APPLE_TRANSACTION_ID_NOT_FOUND = 4040010;
+
+const APPLE_PRODUCTION_HOST = 'https://api.storekit.itunes.apple.com';
+const APPLE_SANDBOX_HOST = 'https://api.storekit-sandbox.itunes.apple.com';
+const APPLE_SUBSCRIPTION_PRODUCT_IDS = ['connectghin_monthly', 'connectghin_yearly'] as const;
+
+type AppleApiEnvironment = 'Production' | 'Sandbox';
+
+type AppleApiResult = {
+  environment: AppleApiEnvironment;
+  httpStatus: number;
+  errorCode: number | null;
+  body: Record<string, unknown> | null;
+};
+
 @Injectable()
 export class IapVerificationService {
   private readonly logger = new Logger(IapVerificationService.name);
@@ -32,45 +48,47 @@ export class IapVerificationService {
   constructor(private readonly config: ConfigService) {}
 
   async verifyApple(transactionId: string): Promise<VerifiedEntitlement> {
-    const token = this.buildAppleJwt();
-    const prod = await this.fetchAppleSubscription(
-      `https://api.storekit.itunes.apple.com/inApps/v1/subscriptions/${encodeURIComponent(transactionId)}`,
-      token,
-    ).catch(async () =>
-      this.fetchAppleSubscription(
-        `https://api.storekit-sandbox.itunes.apple.com/inApps/v1/subscriptions/${encodeURIComponent(transactionId)}`,
-        token,
-      ),
-    );
-
-    const entries = asArray((prod as Record<string, unknown>).data);
-    const entry = (entries[0] ?? {}) as Record<string, unknown>;
-    const lastTransactions = asArray(entry.lastTransactions);
-    const tx = (lastTransactions[0] ?? {}) as Record<string, unknown>;
-    const decoded = asString(tx.signedTransactionInfo)
-      ? decodeUnsignedJwtPayload(asString(tx.signedTransactionInfo) as string)
-      : null;
-    const productId = asString(decoded?.productId) ?? asString(tx.productId);
-    const originalTransactionId =
-      asString(decoded?.originalTransactionId) ?? asString(tx.originalTransactionId) ?? transactionId;
-    const purchaseMs = asNumber(decoded?.purchaseDate);
-    const expiresMs = asNumber(decoded?.expiresDate);
-    const statusCode = asNumber(tx.status) ?? asNumber(entry.status) ?? 2;
-
-    if (!productId) {
-      throw new BadRequestException('Apple verification failed: missing productId');
+    const id = normalizeAppleTransactionId(transactionId);
+    const txSuffix = appleTransactionIdSuffix(id ?? '');
+    if (!id) {
+      this.logger.warn(`Apple verify txSuffix=${txSuffix || 'none'} result=invalid_transaction_id`);
+      throw new BadRequestException('Apple verification failed: missing transactionId');
     }
-    this.assertAllowedProduct('APPLE_APP_STORE', productId);
 
-    return {
-      provider: 'APPLE_APP_STORE',
-      productId,
-      externalSubscriptionId: originalTransactionId,
-      billingCycle: inferBillingCycle(productId),
-      status: mapAppleStatus(statusCode),
-      currentPeriodStart: purchaseMs ? new Date(purchaseMs).toISOString() : undefined,
-      currentPeriodEnd: expiresMs ? new Date(expiresMs).toISOString() : undefined,
-    };
+    const token = this.buildAppleJwt();
+    const expectedBundleId = this.config.get<string>('APPLE_IAP_BUNDLE_ID')?.trim() ?? '';
+    let result = await this.fetchAppleSubscription('Production', id, token);
+    if (shouldRetryAppleSandbox(result.httpStatus, result.errorCode)) {
+      this.logger.log(
+        `Apple verify environment=Production errorCode=${APPLE_TRANSACTION_ID_NOT_FOUND} txSuffix=${txSuffix} result=retry_sandbox`,
+      );
+      result = await this.fetchAppleSubscription('Sandbox', id, token);
+    }
+    if (result.httpStatus < 200 || result.httpStatus >= 300 || !result.body) {
+      this.logger.warn(
+        `Apple verify environment=${result.environment} http=${result.httpStatus} errorCode=${result.errorCode ?? 'none'} txSuffix=${txSuffix} result=failed`,
+      );
+      throw new BadRequestException(`Apple verification failed (${result.errorCode ?? result.httpStatus})`);
+    }
+
+    let entitlement: VerifiedEntitlement;
+    try {
+      entitlement = this.parseAppleSubscription(result.body, id, expectedBundleId);
+    } catch (error) {
+      this.logger.warn(
+        `Apple verify environment=${result.environment} http=${result.httpStatus} errorCode=none productId=unknown txSuffix=${txSuffix} result=rejected`,
+      );
+      throw error;
+    }
+    const entitled =
+      entitlement.status === SubscriptionStatus.ACTIVE || entitlement.status === SubscriptionStatus.PAST_DUE;
+    this.logger.log(
+      `Apple verify environment=${result.environment} http=${result.httpStatus} errorCode=none productId=${entitlement.productId} txSuffix=${txSuffix} result=${entitled ? 'active' : 'inactive'}`,
+    );
+    if (!entitled) {
+      throw new BadRequestException('Apple verification failed: subscription is not active');
+    }
+    return entitlement;
   }
 
   async verifyGoogle(input: {
@@ -147,16 +165,78 @@ export class IapVerificationService {
     return expected;
   }
 
-  private async fetchAppleSubscription(url: string, token: string): Promise<Record<string, unknown>> {
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    if (!res.ok) {
-      throw new BadRequestException(`Apple verification failed (${res.status})`);
+  private async fetchAppleSubscription(
+    environment: AppleApiEnvironment,
+    transactionId: string,
+    token: string,
+  ): Promise<AppleApiResult> {
+    const host = environment === 'Production' ? APPLE_PRODUCTION_HOST : APPLE_SANDBOX_HOST;
+    const txSuffix = appleTransactionIdSuffix(transactionId);
+    let res: Response;
+    try {
+      res = await fetch(`${host}/inApps/v1/subscriptions/${encodeURIComponent(transactionId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {
+      this.logger.warn(
+        `Apple verify environment=${environment} txSuffix=${txSuffix} result=request_failed`,
+      );
+      throw new BadRequestException('Apple verification failed');
     }
-    return (await res.json()) as Record<string, unknown>;
+
+    const text = await res.text();
+    let body: Record<string, unknown> | null = null;
+    if (text) {
+      try {
+        const parsed = JSON.parse(text) as unknown;
+        body = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+      } catch {
+        body = null;
+      }
+    }
+    const errorCode = appleApiErrorCode(body);
+    this.logger.log(
+      `Apple verify environment=${environment} http=${res.status} errorCode=${errorCode ?? 'none'} txSuffix=${txSuffix} result=${res.ok ? 'response' : 'error'}`,
+    );
+    return { environment, httpStatus: res.status, errorCode, body };
+  }
+
+  private parseAppleSubscription(
+    payload: Record<string, unknown>,
+    transactionId: string,
+    expectedBundleId: string,
+  ): VerifiedEntitlement {
+    const entries = asArray(payload.data);
+    const entry = (entries[0] ?? {}) as Record<string, unknown>;
+    const lastTransactions = asArray(entry.lastTransactions);
+    const tx = (lastTransactions[0] ?? {}) as Record<string, unknown>;
+    const signed = asString(tx.signedTransactionInfo);
+    const decoded = signed ? decodeUnsignedJwtPayload(signed) : null;
+    const productId = asString(decoded?.productId) ?? asString(tx.productId);
+    const originalTransactionId =
+      asString(decoded?.originalTransactionId) ?? asString(tx.originalTransactionId) ?? transactionId;
+    const purchaseMs = asNumber(decoded?.purchaseDate);
+    const expiresMs = asNumber(decoded?.expiresDate);
+    const statusCode = asNumber(tx.status) ?? asNumber(entry.status) ?? 2;
+    const bundleId = asString(decoded?.bundleId) ?? asString(payload.bundleId);
+
+    if (!productId) {
+      throw new BadRequestException('Apple verification failed: missing productId');
+    }
+    if (!expectedBundleId || !bundleId || bundleId !== expectedBundleId) {
+      throw new BadRequestException('Apple verification failed: bundleId mismatch');
+    }
+    this.assertAllowedProduct('APPLE_APP_STORE', productId);
+
+    return {
+      provider: 'APPLE_APP_STORE',
+      productId,
+      externalSubscriptionId: originalTransactionId,
+      billingCycle: inferBillingCycle(productId),
+      status: mapAppleStatus(statusCode),
+      currentPeriodStart: purchaseMs ? new Date(purchaseMs).toISOString() : undefined,
+      currentPeriodEnd: expiresMs ? new Date(expiresMs).toISOString() : undefined,
+    };
   }
 
   private buildAppleJwt(): string {
@@ -268,6 +348,9 @@ export class IapVerificationService {
       if (provider === 'GOOGLE_PLAY') {
         throw new UnauthorizedException(`Product ${productId} is not allowed for GOOGLE_PLAY`);
       }
+      if (!(APPLE_SUBSCRIPTION_PRODUCT_IDS as readonly string[]).includes(productId)) {
+        throw new BadRequestException(`Product ${productId} is not allowed for APPLE_APP_STORE`);
+      }
       return;
     }
     const allowed = new Set(
@@ -283,6 +366,32 @@ export class IapVerificationService {
       throw new UnauthorizedException(`Product ${productId} is not allowed for ${provider}`);
     }
   }
+}
+
+export function appleApiErrorCode(body: unknown): number | null {
+  if (!body || typeof body !== 'object') return null;
+  const code = (body as { errorCode?: unknown }).errorCode;
+  const n = typeof code === 'number' ? code : typeof code === 'string' && code.trim() ? Number(code) : NaN;
+  return Number.isFinite(n) ? n : null;
+}
+
+export function shouldRetryAppleSandbox(httpStatus: number, errorCode: number | null): boolean {
+  return httpStatus !== 200 && errorCode === APPLE_TRANSACTION_ID_NOT_FOUND;
+}
+
+export function appleTransactionIdSuffix(transactionId: string): string {
+  if (transactionId.length <= 4) return '****';
+  return transactionId.slice(-4);
+}
+
+/** Numeric App Store transaction id. Accepts a StoreKit JWS only to read its transactionId. */
+export function normalizeAppleTransactionId(raw: string): string | null {
+  const trimmed = raw?.trim() ?? '';
+  if (/^\d+$/.test(trimmed)) return trimmed;
+  const decoded = decodeUnsignedJwtPayload(trimmed);
+  const id = decoded?.transactionId ?? decoded?.originalTransactionId;
+  const value = id == null ? '' : String(id).trim();
+  return /^\d+$/.test(value) ? value : null;
 }
 
 function mapAppleStatus(statusCode: number): SubscriptionStatus {
