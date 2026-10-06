@@ -126,8 +126,12 @@ export class SubscriptionsService {
     return { ok: true };
   }
 
-  async verifyAndSyncApple(userId: string, transactionId: string): Promise<unknown> {
-    const verified = await this.iapVerification.verifyApple(transactionId);
+  async verifyAndSyncApple(
+    userId: string,
+    transactionId: string,
+    signedTransactionInfo?: string,
+  ): Promise<unknown> {
+    const verified = await this.iapVerification.verifyApple(transactionId, signedTransactionInfo);
     return this.syncEntitlement(userId, verified);
   }
 

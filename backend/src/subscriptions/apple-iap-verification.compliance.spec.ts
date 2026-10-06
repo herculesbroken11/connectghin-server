@@ -7,8 +7,10 @@ import { SubscriptionStatus } from '@prisma/client';
 import {
   APPLE_TRANSACTION_ID_NOT_FOUND,
   IapVerificationService,
+  entitlementFromDecodedAppleTransaction,
   normalizeAppleTransactionId,
   shouldRetryAppleSandbox,
+  signAppleEs256,
 } from './iap-verification.service';
 
 const BUNDLE_ID = 'com.connectghin.app';
@@ -98,7 +100,7 @@ describe('Apple subscription verification', () => {
     expect(verified.status).toBe(SubscriptionStatus.ACTIVE);
     expect(verified.productId).toBe('connectghin_monthly');
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0][0])).toContain('https://api.storekit.itunes.apple.com/');
+    expect(String(fetchMock.mock.calls[0][0])).toContain('https://api.storekit.apple.com/');
     expect(String(fetchMock.mock.calls[0][0])).not.toContain('sandbox');
   });
 
@@ -119,8 +121,8 @@ describe('Apple subscription verification', () => {
     expect(verified.status).toBe(SubscriptionStatus.ACTIVE);
     expect(verified.provider).toBe('APPLE_APP_STORE');
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(String(fetchMock.mock.calls[0][0])).toContain('https://api.storekit.itunes.apple.com/');
-    expect(String(fetchMock.mock.calls[1][0])).toContain('https://api.storekit-sandbox.itunes.apple.com/');
+    expect(String(fetchMock.mock.calls[0][0])).toContain('https://api.storekit.apple.com/');
+    expect(String(fetchMock.mock.calls[1][0])).toContain('https://api.storekit-sandbox.apple.com/');
     expect(String(fetchMock.mock.calls[1][0])).toContain(TRANSACTION_ID);
   });
 
@@ -172,7 +174,46 @@ describe('Apple subscription verification', () => {
     const payload = Buffer.from(JSON.stringify({ transactionId: TRANSACTION_ID })).toString('base64url');
     expect(normalizeAppleTransactionId(`header.${payload}.sig`)).toBe(TRANSACTION_ID);
     expect(shouldRetryAppleSandbox(404, 4040010)).toBe(true);
+    expect(shouldRetryAppleSandbox(404, null)).toBe(true);
     expect(shouldRetryAppleSandbox(200, 4040010)).toBe(false);
     expect(shouldRetryAppleSandbox(401, 401)).toBe(false);
+  });
+
+  it('signs the App Store Server API token with a raw ES256 signature', () => {
+    const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    const pem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+    expect(signAppleEs256(pem, 'header.payload').length).toBe(64);
+  });
+
+  it('treats an unexpired Sandbox transaction as active and does not turn a bad JWS into an auth error', async () => {
+    const active = entitlementFromDecodedAppleTransaction(
+      {
+        productId: 'connectghin_monthly',
+        bundleId: BUNDLE_ID,
+        environment: 'Sandbox',
+        originalTransactionId: TRANSACTION_ID,
+        purchaseDate: Date.now() - 60_000,
+        expiresDate: Date.now() + 60_000,
+      },
+      BUNDLE_ID,
+    );
+    expect(active.status).toBe(SubscriptionStatus.ACTIVE);
+
+    const expired = entitlementFromDecodedAppleTransaction(
+      {
+        productId: 'connectghin_monthly',
+        bundleId: BUNDLE_ID,
+        environment: 'Sandbox',
+        expiresDate: Date.now() - 60_000,
+      },
+      BUNDLE_ID,
+    );
+    expect(expired.status).toBe(SubscriptionStatus.EXPIRED);
+
+    fetchMock.mockResolvedValue(
+      jsonResponse(404, { errorCode: 4040010, errorMessage: 'Transaction id not found.' }),
+    );
+    await expect(service.verifyApple(TRANSACTION_ID, 'not-a-jws')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.verifyApple(TRANSACTION_ID, 'a.b.c')).rejects.not.toBeInstanceOf(UnauthorizedException);
   });
 });

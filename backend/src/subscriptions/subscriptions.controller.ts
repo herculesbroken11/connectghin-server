@@ -42,6 +42,10 @@ class SyncEntitlementDto {
 class VerifyAppleDto {
   @IsString()
   transactionId!: string;
+
+  @IsOptional()
+  @IsString()
+  signedTransactionInfo?: string;
 }
 
 class VerifyGoogleDto {
@@ -66,7 +70,11 @@ export class SubscriptionsController {
 
   @Post('entitlements/verify/apple')
   verifyApple(@Req() req: AuthedRequest, @Body() dto: VerifyAppleDto): Promise<unknown> {
-    return this.subscriptionsService.verifyAndSyncApple(req.user.sub, dto.transactionId);
+    return this.subscriptionsService.verifyAndSyncApple(
+      req.user.sub,
+      dto.transactionId,
+      dto.signedTransactionInfo,
+    );
   }
 
   @Post('entitlements/verify/google')
