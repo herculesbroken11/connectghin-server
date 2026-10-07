@@ -23,6 +23,7 @@
     "seed": "node scripts/run-ts-node.mjs --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
   },
   "dependencies": {
+    "@apple/app-store-server-library": "3.1.0",
     "@nestjs/common": "^10.4.2",
     "@nestjs/config": "^3.2.3",
     "@nestjs/core": "^10.4.2",

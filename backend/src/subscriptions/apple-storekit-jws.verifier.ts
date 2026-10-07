@@ -73,6 +73,11 @@ um1xRKtzCTrJ+VKACd+66eYWyi4uTLLT3OUEVLLUNIAytbwPF+E=
 /** Ordered anchors Apple documents for verifying StoreKit / notification JWS. */
 const APPLE_ROOT_CA_ANCHOR_PEMS = [APPLE_ROOT_CA_G3_PEM, APPLE_ROOT_CA_G2_PEM];
 
+/** DER-encoded Apple root certificates for SignedDataVerifier. */
+export function appleRootCertificateDers(): Buffer[] {
+  return APPLE_ROOT_CA_ANCHOR_PEMS.map((pem) => new crypto.X509Certificate(pem).raw);
+}
+
 function verifyChainAnchoredToAppleRoot(lastIssuerCert: crypto.X509Certificate): void {
   for (const pem of APPLE_ROOT_CA_ANCHOR_PEMS) {
     try {

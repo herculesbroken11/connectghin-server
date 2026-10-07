@@ -1,3 +1,13 @@
+import {
+  APIError,
+  APIException,
+  AppStoreServerAPIClient,
+  Environment,
+  SignedDataVerifier,
+  StatusResponse,
+  VerificationException,
+  VerificationStatus,
+} from '@apple/app-store-server-library';
 import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BillingCycle, SubscriptionStatus } from '@prisma/client';
@@ -11,7 +21,7 @@ import {
   isGooglePlaySubscriptionProductId,
   redactPurchaseToken,
 } from '../billing/google-play.constants';
-import { verifyAppleStoreKitJws } from './apple-storekit-jws.verifier';
+import { appleRootCertificateDers } from './apple-storekit-jws.verifier';
 
 type VerifiedEntitlement = {
   provider: 'APPLE_APP_STORE' | 'GOOGLE_PLAY';
@@ -27,28 +37,31 @@ type VerifiedEntitlement = {
 };
 
 /** App Store Server API: transaction id is not in this environment. */
-export const APPLE_TRANSACTION_ID_NOT_FOUND = 4040010;
+export const APPLE_TRANSACTION_ID_NOT_FOUND = APIError.TRANSACTION_ID_NOT_FOUND;
 
-const APPLE_PRODUCTION_HOST = 'https://api.storekit.apple.com';
-const APPLE_SANDBOX_HOST = 'https://api.storekit-sandbox.apple.com';
 const APPLE_SUBSCRIPTION_PRODUCT_IDS = ['connectghin_monthly', 'connectghin_yearly'] as const;
 
-type AppleApiEnvironment = 'Production' | 'Sandbox';
-
-type AppleApiResult = {
-  environment: AppleApiEnvironment;
-  httpStatus: number;
-  errorCode: number | null;
-  body: Record<string, unknown> | null;
+type AppleClients = {
+  production: AppStoreServerAPIClient;
+  sandbox: AppStoreServerAPIClient;
+  bundleId: string;
 };
 
 @Injectable()
 export class IapVerificationService {
   private readonly logger = new Logger(IapVerificationService.name);
+  private appleClients: AppleClients | null = null;
+  private appleProductionVerifier: SignedDataVerifier | null = null;
+  private appleSandboxVerifier: SignedDataVerifier | null = null;
+  private appleRoots: Buffer[] | null = null;
 
   constructor(private readonly config: ConfigService) {}
 
-  async verifyApple(transactionId: string, signedTransactionInfo?: string): Promise<VerifiedEntitlement> {
+  /**
+   * Purchase and Restore Purchases both call this. The signed transaction is the one
+   * returned by the App Store Server API, not a client-supplied receipt.
+   */
+  async verifyApple(transactionId: string, _signedTransactionInfo?: string): Promise<VerifiedEntitlement> {
     const id = normalizeAppleTransactionId(transactionId);
     const txSuffix = appleTransactionIdSuffix(id ?? '');
     if (!id) {
@@ -56,54 +69,28 @@ export class IapVerificationService {
       throw new BadRequestException('Apple verification failed: missing transactionId');
     }
 
-    const token = this.buildAppleJwt();
-    const expectedBundleId = this.config.get<string>('APPLE_IAP_BUNDLE_ID')?.trim() ?? '';
-    let result = await this.fetchAppleSubscription('Production', id, token);
-    if (shouldRetryAppleSandbox(result.httpStatus, result.errorCode)) {
+    const clients = this.ensureAppleClients();
+    try {
+      return await this.verifyAppleInEnvironment(clients.production, Environment.PRODUCTION, id, clients.bundleId, txSuffix);
+    } catch (error) {
+      if (!shouldRetryAppleEnvironment(error)) throw toAppleBillingError(error);
+      const errorCode =
+        error instanceof APIException
+          ? (appleApiErrorNumber(error.apiError) ?? 'none')
+          : error instanceof VerificationException
+            ? error.status
+            : 'none';
+      const http = error instanceof APIException ? error.httpStatusCode : 200;
       this.logger.log(
-        `Apple verify environment=Production errorCode=${result.errorCode ?? 'none'} txSuffix=${txSuffix} result=retry_sandbox`,
-      );
-      result = await this.fetchAppleSubscription('Sandbox', id, token);
-    }
-
-    let rejection: BadRequestException | null = null;
-    if (result.httpStatus >= 200 && result.httpStatus < 300 && result.body) {
-      try {
-        const entitlement = this.parseAppleSubscription(result.body, id, expectedBundleId);
-        if (isGrantedAppleStatus(entitlement.status)) {
-          this.logger.log(
-            `Apple verify environment=${result.environment} http=${result.httpStatus} errorCode=none productId=${entitlement.productId} txSuffix=${txSuffix} result=active`,
-          );
-          return entitlement;
-        }
-        this.logger.log(
-          `Apple verify environment=${result.environment} http=${result.httpStatus} errorCode=none productId=${entitlement.productId} txSuffix=${txSuffix} result=inactive`,
-        );
-        rejection = new BadRequestException('Apple verification failed: subscription is not active');
-      } catch (error) {
-        this.logger.warn(
-          `Apple verify environment=${result.environment} http=${result.httpStatus} errorCode=none productId=unknown txSuffix=${txSuffix} result=rejected`,
-        );
-        if (!(error instanceof BadRequestException)) throw error;
-        rejection = error;
-      }
-    } else {
-      this.logger.warn(
-        `Apple verify environment=${result.environment} http=${result.httpStatus} errorCode=${result.errorCode ?? 'none'} txSuffix=${txSuffix} result=failed`,
+        `Apple verify environment=Production http=${http} errorCode=${errorCode} txSuffix=${txSuffix} result=retry_sandbox`,
       );
     }
 
-    const fromDevice = this.entitlementFromDeviceJws(signedTransactionInfo, expectedBundleId, txSuffix);
-    if (fromDevice) return fromDevice;
-
-    throw (
-      rejection ??
-      new BadRequestException(
-        result.errorCode != null
-          ? `Apple verification failed (${result.errorCode})`
-          : 'Apple verification failed: subscription is not active',
-      )
-    );
+    try {
+      return await this.verifyAppleInEnvironment(clients.sandbox, Environment.SANDBOX, id, clients.bundleId, txSuffix);
+    } catch (error) {
+      throw toAppleBillingError(error);
+    }
   }
 
   async verifyGoogle(input: {
@@ -180,136 +167,218 @@ export class IapVerificationService {
     return expected;
   }
 
-  private async fetchAppleSubscription(
-    environment: AppleApiEnvironment,
-    transactionId: string,
-    token: string,
-  ): Promise<AppleApiResult> {
-    const host = environment === 'Production' ? APPLE_PRODUCTION_HOST : APPLE_SANDBOX_HOST;
-    const txSuffix = appleTransactionIdSuffix(transactionId);
-    let res: Response;
-    try {
-      res = await fetch(`${host}/inApps/v1/subscriptions/${encodeURIComponent(transactionId)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    } catch {
-      this.logger.warn(
-        `Apple verify environment=${environment} txSuffix=${txSuffix} result=request_failed`,
-      );
-      throw new BadRequestException('Apple verification failed');
-    }
-
-    const text = await res.text();
-    let body: Record<string, unknown> | null = null;
-    if (text) {
-      try {
-        const parsed = JSON.parse(text) as unknown;
-        body = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
-      } catch {
-        body = null;
-      }
-    }
-    const errorCode = appleApiErrorCode(body);
-    this.logger.log(
-      `Apple verify environment=${environment} http=${res.status} errorCode=${errorCode ?? 'none'} txSuffix=${txSuffix} result=${res.ok ? 'response' : 'error'}`,
-    );
-    return { environment, httpStatus: res.status, errorCode, body };
-  }
-
-  private parseAppleSubscription(
-    payload: Record<string, unknown>,
-    transactionId: string,
-    expectedBundleId: string,
-  ): VerifiedEntitlement {
-    const entries = asArray(payload.data);
-    const entry = (entries[0] ?? {}) as Record<string, unknown>;
-    const lastTransactions = asArray(entry.lastTransactions);
-    const tx = (lastTransactions[0] ?? {}) as Record<string, unknown>;
-    const signed = asString(tx.signedTransactionInfo);
-    const decoded = signed ? decodeUnsignedJwtPayload(signed) : null;
-    const productId = asString(decoded?.productId) ?? asString(tx.productId);
-    const originalTransactionId =
-      asString(decoded?.originalTransactionId) ?? asString(tx.originalTransactionId) ?? transactionId;
-    const purchaseMs = asNumber(decoded?.purchaseDate);
-    const expiresMs = asNumber(decoded?.expiresDate);
-    const statusCode = asNumber(tx.status) ?? asNumber(entry.status) ?? 2;
-    const bundleId = asString(decoded?.bundleId) ?? asString(payload.bundleId);
-
-    if (!productId) {
-      throw new BadRequestException('Apple verification failed: missing productId');
-    }
-    if (!expectedBundleId || !bundleId || bundleId !== expectedBundleId) {
-      throw new BadRequestException('Apple verification failed: bundleId mismatch');
-    }
-    this.assertAllowedProduct('APPLE_APP_STORE', productId);
-
-    return {
-      provider: 'APPLE_APP_STORE',
-      productId,
-      externalSubscriptionId: originalTransactionId,
-      billingCycle: inferBillingCycle(productId),
-      status: mapAppleStatus(statusCode),
-      currentPeriodStart: purchaseMs ? new Date(purchaseMs).toISOString() : undefined,
-      currentPeriodEnd: expiresMs ? new Date(expiresMs).toISOString() : undefined,
-    };
-  }
-
-  private buildAppleJwt(): string {
-    const issuerId = this.config.get<string>('APPLE_IAP_ISSUER_ID')?.trim();
-    const keyId = this.config.get<string>('APPLE_IAP_KEY_ID')?.trim();
-    const bundleId = this.config.get<string>('APPLE_IAP_BUNDLE_ID')?.trim();
-    const privateKeyRaw = this.config.get<string>('APPLE_IAP_PRIVATE_KEY') ?? '';
-    if (!issuerId || !keyId || !bundleId || !privateKeyRaw.trim()) {
+  private ensureAppleClients(): AppleClients {
+    if (this.appleClients) return this.appleClients;
+    const signingKey = normalizePem(this.config.get<string>('APPLE_IAP_PRIVATE_KEY') ?? '');
+    const keyId = this.config.get<string>('APPLE_IAP_KEY_ID')?.trim() ?? '';
+    const issuerId = this.config.get<string>('APPLE_IAP_ISSUER_ID')?.trim() ?? '';
+    const bundleId = this.config.get<string>('APPLE_IAP_BUNDLE_ID')?.trim() ?? '';
+    if (!signingKey || !keyId || !issuerId || !bundleId) {
       throw new BadRequestException('Missing Apple IAP credentials');
     }
-
-    const now = Math.floor(Date.now() / 1000);
-    const header = base64UrlJson({ alg: 'ES256', kid: keyId, typ: 'JWT' });
-    const payload = base64UrlJson({
-      iss: issuerId,
-      iat: now,
-      exp: now + 300,
-      aud: 'appstoreconnect-v1',
-      bid: bundleId,
-    });
-    const unsignedToken = `${header}.${payload}`;
-    const signature = signAppleEs256(privateKeyRaw, unsignedToken);
-    return `${unsignedToken}.${toBase64Url(signature)}`;
+    this.appleClients = {
+      bundleId,
+      production: new AppStoreServerAPIClient(signingKey, keyId, issuerId, bundleId, Environment.PRODUCTION),
+      sandbox: new AppStoreServerAPIClient(signingKey, keyId, issuerId, bundleId, Environment.SANDBOX),
+    };
+    return this.appleClients;
   }
 
-  private entitlementFromDeviceJws(
-    signedTransactionInfo: string | undefined,
-    expectedBundleId: string,
+  private appleAppAppleId(): number | undefined {
+    const raw = this.config.get<string>('APPLE_IAP_APP_APPLE_ID')?.trim() ?? '';
+    if (!/^\d+$/.test(raw)) return undefined;
+    const id = Number(raw);
+    return Number.isSafeInteger(id) ? id : undefined;
+  }
+
+  private appleRootCertificates(): Buffer[] {
+    if (!this.appleRoots) this.appleRoots = appleRootCertificateDers();
+    return this.appleRoots;
+  }
+
+  private verifierFor(environment: Environment, txSuffix: string): SignedDataVerifier {
+    const bundleId = this.appleClients?.bundleId ?? '';
+    if (!bundleId) throw new BadRequestException('Missing Apple IAP credentials');
+    if (environment === Environment.SANDBOX) {
+      if (!this.appleSandboxVerifier) {
+        this.appleSandboxVerifier = new SignedDataVerifier(
+          this.appleRootCertificates(),
+          true,
+          Environment.SANDBOX,
+          bundleId,
+        );
+      }
+      return this.appleSandboxVerifier;
+    }
+    if (environment !== Environment.PRODUCTION) {
+      throw new BadRequestException('Apple verification failed: invalid environment');
+    }
+    if (this.appleProductionVerifier) return this.appleProductionVerifier;
+    const appAppleId = this.appleAppAppleId();
+    if (appAppleId == null) {
+      this.logger.warn(
+        `Apple verify environment=Production productId=unknown txSuffix=${txSuffix} result=missing_app_apple_id`,
+      );
+      throw new BadRequestException('Missing Apple IAP credentials');
+    }
+    this.appleProductionVerifier = new SignedDataVerifier(
+      this.appleRootCertificates(),
+      true,
+      Environment.PRODUCTION,
+      bundleId,
+      appAppleId,
+    );
+    return this.appleProductionVerifier;
+  }
+
+  private async verifyAppleInEnvironment(
+    client: AppStoreServerAPIClient,
+    environment: Environment,
+    transactionId: string,
+    bundleId: string,
     txSuffix: string,
-  ): VerifiedEntitlement | null {
-    const jws = signedTransactionInfo?.trim() ?? '';
-    if (jws.split('.').length !== 3) return null;
+  ): Promise<VerifiedEntitlement> {
+    const signed = await this.lookupSignedTransaction(client, environment, transactionId, txSuffix);
+    const entitlement = await this.entitlementFromSignedTransaction(signed, environment, bundleId, txSuffix);
+    if (isGrantedAppleStatus(entitlement.status)) {
+      this.logger.log(
+        `Apple verify environment=${environment} http=200 errorCode=none productId=${entitlement.productId} txSuffix=${txSuffix} result=active`,
+      );
+      return entitlement;
+    }
+
+    const renewed = await this.activeEntitlementFromSubscriptionStatus(
+      client,
+      environment,
+      transactionId,
+      bundleId,
+      txSuffix,
+      entitlement.externalSubscriptionId,
+    );
+    if (renewed) return renewed;
+
+    this.logger.log(
+      `Apple verify environment=${environment} http=200 errorCode=none productId=${entitlement.productId} txSuffix=${txSuffix} result=inactive`,
+    );
+    throw new BadRequestException('Apple verification failed: subscription is not active');
+  }
+
+  private async lookupSignedTransaction(
+    client: AppStoreServerAPIClient,
+    environment: Environment,
+    transactionId: string,
+    txSuffix: string,
+  ): Promise<string> {
+    try {
+      const response = await client.getTransactionInfo(transactionId);
+      const signed = response.signedTransactionInfo?.trim() ?? '';
+      if (!signed) {
+        this.logger.warn(
+          `Apple verify environment=${environment} http=200 errorCode=none productId=unknown txSuffix=${txSuffix} result=rejected`,
+        );
+        throw new BadRequestException('Apple verification failed');
+      }
+      this.logger.log(
+        `Apple verify environment=${environment} http=200 errorCode=none txSuffix=${txSuffix} result=response`,
+      );
+      return signed;
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      if (error instanceof APIException) {
+        this.logger.warn(
+          `Apple verify environment=${environment} http=${error.httpStatusCode} errorCode=${appleApiErrorNumber(error.apiError) ?? 'none'} txSuffix=${txSuffix} result=error`,
+        );
+      } else {
+        this.logger.warn(`Apple verify environment=${environment} txSuffix=${txSuffix} result=request_failed`);
+      }
+      throw error;
+    }
+  }
+
+  private async entitlementFromSignedTransaction(
+    signedTransaction: string,
+    environment: Environment,
+    bundleId: string,
+    txSuffix: string,
+  ): Promise<VerifiedEntitlement> {
     let decoded: Record<string, unknown>;
     try {
-      decoded = verifyAppleStoreKitJws(jws, expectedBundleId);
-    } catch {
-      this.logger.warn(`Apple verify source=jws txSuffix=${txSuffix} result=rejected`);
-      return null;
+      decoded = (await this.verifierFor(environment, txSuffix).verifyAndDecodeTransaction(signedTransaction)) as unknown as Record<
+        string,
+        unknown
+      >;
+    } catch (error) {
+      if (error instanceof VerificationException && error.status === VerificationStatus.INVALID_APP_IDENTIFIER) {
+        this.logger.warn(
+          `Apple verify environment=${environment} http=200 errorCode=${error.status} productId=unknown txSuffix=${txSuffix} result=rejected`,
+        );
+        throw new BadRequestException('Apple verification failed: bundleId mismatch');
+      }
+      throw error;
     }
+    if (decoded.environment !== environment) {
+      throw new VerificationException(VerificationStatus.INVALID_ENVIRONMENT);
+    }
+    if (decoded.environment !== Environment.PRODUCTION && decoded.environment !== Environment.SANDBOX) {
+      throw new BadRequestException('Apple verification failed: invalid environment');
+    }
+    const entitlement = entitlementFromDecodedAppleTransaction(decoded, bundleId);
+    this.assertAllowedProduct('APPLE_APP_STORE', entitlement.productId);
+    return entitlement;
+  }
+
+  private async activeEntitlementFromSubscriptionStatus(
+    client: AppStoreServerAPIClient,
+    environment: Environment,
+    transactionId: string,
+    bundleId: string,
+    txSuffix: string,
+    originalTransactionId?: string,
+  ): Promise<VerifiedEntitlement | null> {
+    let response: StatusResponse;
     try {
-      const entitlement = entitlementFromDecodedAppleTransaction(decoded, expectedBundleId);
-      this.assertAllowedProduct('APPLE_APP_STORE', entitlement.productId);
-      if (!isGrantedAppleStatus(entitlement.status)) {
-        this.logger.log(
-          `Apple verify source=jws productId=${entitlement.productId} txSuffix=${txSuffix} result=inactive`,
+      response = await client.getAllSubscriptionStatuses(transactionId);
+      this.logger.log(
+        `Apple verify environment=${environment} http=200 errorCode=none txSuffix=${txSuffix} result=response`,
+      );
+    } catch (error) {
+      if (error instanceof APIException) {
+        this.logger.warn(
+          `Apple verify environment=${environment} http=${error.httpStatusCode} errorCode=${appleApiErrorNumber(error.apiError) ?? 'none'} txSuffix=${txSuffix} result=error`,
         );
         return null;
       }
-      const environment =
-        decoded.environment === 'Sandbox' || decoded.environment === 'Production' ? decoded.environment : 'unknown';
-      this.logger.log(
-        `Apple verify source=jws environment=${environment} productId=${entitlement.productId} txSuffix=${txSuffix} result=active`,
-      );
-      return entitlement;
-    } catch {
-      this.logger.warn(`Apple verify source=jws txSuffix=${txSuffix} result=rejected`);
-      return null;
+      throw error;
     }
+    if (response.bundleId && response.bundleId !== bundleId) {
+      throw new BadRequestException('Apple verification failed: bundleId mismatch');
+    }
+    if (response.environment && response.environment !== environment) {
+      throw new VerificationException(VerificationStatus.INVALID_ENVIRONMENT);
+    }
+    for (const group of response.data ?? []) {
+      for (const item of group.lastTransactions ?? []) {
+        if (originalTransactionId && item.originalTransactionId && item.originalTransactionId !== originalTransactionId) {
+          continue;
+        }
+        const signed = item.signedTransactionInfo?.trim();
+        if (!signed) continue;
+        try {
+          const entitlement = await this.entitlementFromSignedTransaction(signed, environment, bundleId, txSuffix);
+          if (!isGrantedAppleStatus(entitlement.status)) continue;
+          this.logger.log(
+            `Apple verify environment=${environment} http=200 errorCode=none productId=${entitlement.productId} txSuffix=${txSuffix} result=active`,
+          );
+          return entitlement;
+        } catch (error) {
+          if (error instanceof BadRequestException) throw error;
+          this.logger.warn(
+            `Apple verify environment=${environment} http=200 errorCode=none productId=unknown txSuffix=${txSuffix} result=rejected`,
+          );
+        }
+      }
+    }
+    return null;
   }
 
   private async getGoogleAccessToken(): Promise<string> {
@@ -414,25 +483,44 @@ export class IapVerificationService {
   }
 }
 
-export function appleApiErrorCode(body: unknown): number | null {
-  if (!body || typeof body !== 'object') return null;
-  const code = (body as { errorCode?: unknown }).errorCode;
-  const n = typeof code === 'number' ? code : typeof code === 'string' && code.trim() ? Number(code) : NaN;
-  return Number.isFinite(n) ? n : null;
+export function appleApiErrorNumber(code: number | APIError | null | undefined): number | null {
+  return typeof code === 'number' && Number.isFinite(code) ? code : null;
 }
 
-export function shouldRetryAppleSandbox(httpStatus: number, errorCode: number | null): boolean {
-  if (httpStatus >= 200 && httpStatus < 300) return false;
-  if (errorCode === APPLE_TRANSACTION_ID_NOT_FOUND) return true;
-  return httpStatus === 404;
+/** Production miss that means the transaction may exist in Sandbox (including TestFlight). */
+export function shouldRetryAppleEnvironment(error: unknown): boolean {
+  if (error instanceof VerificationException) {
+    return error.status === VerificationStatus.INVALID_ENVIRONMENT;
+  }
+  if (!(error instanceof APIException)) return false;
+  if (error.httpStatusCode >= 200 && error.httpStatusCode < 300) return false;
+  const code = appleApiErrorNumber(error.apiError);
+  if (
+    code === APIError.TRANSACTION_ID_NOT_FOUND ||
+    code === APIError.ORIGINAL_TRANSACTION_ID_NOT_FOUND ||
+    code === APIError.ORIGINAL_TRANSACTION_ID_NOT_FOUND_RETRYABLE
+  ) {
+    return true;
+  }
+  return error.httpStatusCode === 404;
 }
 
-export function signAppleEs256(privateKeyPem: string, unsignedToken: string): Buffer {
-  const privateKey = createPrivateKey(normalizePem(privateKeyPem));
-  const signer = createSign('sha256');
-  signer.update(unsignedToken);
-  signer.end();
-  return signer.sign({ key: privateKey, dsaEncoding: 'ieee-p1363' });
+function toAppleBillingError(error: unknown): BadRequestException {
+  if (error instanceof BadRequestException) return error;
+  if (error instanceof APIException) {
+    const code = appleApiErrorNumber(error.apiError) ?? error.httpStatusCode;
+    return new BadRequestException(`Apple verification failed (${code})`);
+  }
+  if (error instanceof VerificationException) {
+    if (error.status === VerificationStatus.INVALID_APP_IDENTIFIER) {
+      return new BadRequestException('Apple verification failed: bundleId mismatch');
+    }
+    if (error.status === VerificationStatus.INVALID_ENVIRONMENT) {
+      return new BadRequestException('Apple verification failed: invalid environment');
+    }
+    return new BadRequestException('Apple verification failed');
+  }
+  return new BadRequestException('Apple verification failed');
 }
 
 export function isGrantedAppleStatus(status: SubscriptionStatus): boolean {
@@ -481,13 +569,6 @@ export function normalizeAppleTransactionId(raw: string): string | null {
   const id = decoded?.transactionId ?? decoded?.originalTransactionId;
   const value = id == null ? '' : String(id).trim();
   return /^\d+$/.test(value) ? value : null;
-}
-
-function mapAppleStatus(statusCode: number): SubscriptionStatus {
-  if (statusCode === 1) return SubscriptionStatus.ACTIVE;
-  if (statusCode === 4 || statusCode === 3) return SubscriptionStatus.PAST_DUE;
-  if (statusCode === 2 || statusCode === 5) return SubscriptionStatus.CANCELED;
-  return SubscriptionStatus.CANCELED;
 }
 
 function mapGoogleState(state: string): SubscriptionStatus {
