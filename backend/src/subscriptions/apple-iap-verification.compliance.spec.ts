@@ -57,6 +57,11 @@ function appleIapMock(): AppleIapMock {
   return state;
 }
 
+function unsignedJws(payload: Record<string, unknown>): string {
+  const part = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+  return `${part({ alg: 'ES256' })}.${part(payload)}.sig`;
+}
+
 function activeDecoded(environment: Environment | string, overrides: Record<string, unknown> = {}) {
   return {
     productId: 'connectghin_monthly',
@@ -131,7 +136,7 @@ describe('Apple subscription verification', () => {
     expect(appleIapMock().getAllSubscriptionStatuses).not.toHaveBeenCalled();
   });
 
-  it('verifies a TestFlight transaction through Sandbox when Production cannot find it', async () => {
+  it('no-JWS fallback tries Production then Sandbox when the transaction is not found', async () => {
     const testFlight = serviceWith({ ...credentials, APPLE_IAP_APP_APPLE_ID: '' });
     appleIapMock().getTransactionInfo.mockImplementation(async (environment: string, transactionId: string) => {
       if (environment === Environment.PRODUCTION) {
@@ -291,6 +296,81 @@ describe('Apple subscription verification', () => {
 
     await expect(withoutAppId.verifyApple(TRANSACTION_ID)).rejects.toThrow('Missing Apple IAP credentials');
     expect(appleIapMock().getTransactionInfo.mock.calls.map((call) => call[0])).toEqual([Environment.PRODUCTION]);
+  });
+
+  it('routes a verified Sandbox JWS to Sandbox and never calls Production', async () => {
+    const testFlight = serviceWith({ ...credentials, APPLE_IAP_APP_APPLE_ID: '' });
+    const sandboxJws = unsignedJws({
+      environment: 'Sandbox',
+      transactionId: '99900001111',
+      productId: 'connectghin_yearly',
+      bundleId: 'com.example.other',
+      expiresDate: Date.now() + 60_000,
+    });
+    appleIapMock().getTransactionInfo.mockImplementation(async (environment: string, transactionId: string) => {
+      if (environment === Environment.PRODUCTION) throw new APIException(401, null, null);
+      return { signedTransactionInfo: `api-${transactionId.slice(-4)}` };
+    });
+    appleIapMock().verifyAndDecodeTransaction.mockImplementation(async (environment: string, signed: string) => {
+      if (environment !== Environment.SANDBOX) throw new Error('production verifier should not run');
+      if (signed === sandboxJws) {
+        return activeDecoded(Environment.SANDBOX, { transactionId: TRANSACTION_ID });
+      }
+      return activeDecoded(Environment.SANDBOX);
+    });
+
+    const verified = await testFlight.verifyApple('1111', sandboxJws);
+
+    expect(verified.status).toBe(SubscriptionStatus.ACTIVE);
+    expect(verified.productId).toBe('connectghin_monthly');
+    expect(appleIapMock().getTransactionInfo).toHaveBeenCalledTimes(1);
+    expect(appleIapMock().getTransactionInfo).toHaveBeenCalledWith(Environment.SANDBOX, TRANSACTION_ID);
+    expect(appleIapMock().verifyAndDecodeTransaction).toHaveBeenCalledWith(Environment.SANDBOX, sandboxJws);
+    expect(appleIapMock().getTransactionInfo.mock.calls.some((call) => call[0] === Environment.PRODUCTION)).toBe(
+      false,
+    );
+  });
+
+  it('does not grant Premium from an invalid Sandbox JWS', async () => {
+    const sandboxJws = unsignedJws({
+      environment: 'Sandbox',
+      transactionId: TRANSACTION_ID,
+      productId: 'connectghin_monthly',
+      bundleId: BUNDLE_ID,
+      expiresDate: Date.now() + 60_000,
+    });
+    appleIapMock().verifyAndDecodeTransaction.mockRejectedValue(
+      new VerificationException(VerificationStatus.VERIFICATION_FAILURE),
+    );
+    appleIapMock().getTransactionInfo.mockResolvedValue({ signedTransactionInfo: 'would-grant' });
+
+    await expect(service.verifyApple(TRANSACTION_ID, sandboxJws)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.verifyApple(TRANSACTION_ID, sandboxJws)).rejects.not.toBeInstanceOf(UnauthorizedException);
+    expect(appleIapMock().getTransactionInfo).not.toHaveBeenCalled();
+  });
+
+  it('routes a verified Production JWS to Production and does not call Sandbox', async () => {
+    const productionJws = unsignedJws({
+      environment: 'Production',
+      transactionId: '1',
+      productId: 'other_product',
+    });
+    appleIapMock().getTransactionInfo.mockImplementation(async (environment: string) => {
+      if (environment === Environment.SANDBOX) throw new Error('sandbox should not be called');
+      return { signedTransactionInfo: 'api-production' };
+    });
+    appleIapMock().verifyAndDecodeTransaction.mockImplementation(async (environment: string, signed: string) => {
+      if (environment !== Environment.PRODUCTION) throw new Error('sandbox verifier should not run');
+      if (signed === productionJws) return activeDecoded(Environment.PRODUCTION, { transactionId: TRANSACTION_ID });
+      return activeDecoded(Environment.PRODUCTION);
+    });
+
+    const verified = await service.verifyApple(TRANSACTION_ID, productionJws);
+
+    expect(verified.status).toBe(SubscriptionStatus.ACTIVE);
+    expect(verified.productId).toBe('connectghin_monthly');
+    expect(appleIapMock().getTransactionInfo.mock.calls.map((call) => call[0])).toEqual([Environment.PRODUCTION]);
+    expect(appleIapMock().verifyAndDecodeTransaction).toHaveBeenCalledWith(Environment.PRODUCTION, productionJws);
   });
 
   it('rejects a missing transaction id before calling Apple', async () => {
