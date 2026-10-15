@@ -1,12 +1,12 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   BillingCycle,
   MembershipStatus,
   MembershipType,
+  Prisma,
   SubscriptionProvider,
   SubscriptionStatus,
 } from '@prisma/client';
-import type { Prisma } from '@prisma/client';
 
 import { IapVerificationService } from './iap-verification.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -60,14 +60,13 @@ export class SubscriptionsService {
       return { ok: true, idempotent: true };
     }
 
-    const row = await this.prisma.subscription.findFirst({
-      where: {
-        userId,
-        provider: input.provider as SubscriptionProvider,
-        planCode: input.productId,
-      },
-      orderBy: { updatedAt: 'desc' },
-    });
+    const row = await this.findSubscriptionForEntitlement(userId, input);
+    if (row && input.provider === 'APPLE_APP_STORE' && row.userId !== userId) {
+      this.logger.warn(
+        `IAP persist blocked provider=${input.provider} productId=${input.productId} reason=external_id_owned_by_another_user`,
+      );
+      throw new ConflictException('This App Store subscription is already linked to another account.');
+    }
 
     const currentPeriodStart = input.currentPeriodStart ? new Date(input.currentPeriodStart) : null;
     const currentPeriodEnd = input.currentPeriodEnd ? new Date(input.currentPeriodEnd) : null;
@@ -98,20 +97,25 @@ export class SubscriptionsService {
     };
 
     let saved: { id: string };
-    if (row) {
-      saved = await this.prisma.subscription.update({
-        where: { id: row.id },
-        data,
-        select: { id: true },
-      });
-    } else {
-      saved = await this.prisma.subscription.create({
-        data: {
-          userId,
-          ...data,
-        },
-        select: { id: true },
-      });
+    try {
+      if (row) {
+        saved = await this.prisma.subscription.update({
+          where: { id: row.id },
+          data,
+          select: { id: true },
+        });
+      } else {
+        saved = await this.prisma.subscription.create({
+          data: {
+            userId,
+            ...data,
+          },
+          select: { id: true },
+        });
+      }
+    } catch (error) {
+      this.logPrismaFailure(error, input);
+      throw error;
     }
 
     await this.prisma.paymentEvent.create({
@@ -239,6 +243,46 @@ export class SubscriptionsService {
     });
     await this.syncUserMembership(userId);
     return { ok: true };
+  }
+
+  private findSubscriptionForEntitlement(
+    userId: string,
+    input: {
+      provider: 'APPLE_APP_STORE' | 'GOOGLE_PLAY';
+      productId: string;
+      externalSubscriptionId?: string;
+    },
+  ) {
+    if (input.provider === 'APPLE_APP_STORE' && input.externalSubscriptionId) {
+      return this.prisma.subscription.findFirst({
+        where: {
+          provider: SubscriptionProvider.APPLE_APP_STORE,
+          storeExternalId: input.externalSubscriptionId,
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+    }
+    return this.prisma.subscription.findFirst({
+      where: {
+        userId,
+        provider: input.provider as SubscriptionProvider,
+        planCode: input.productId,
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
+  private logPrismaFailure(
+    error: unknown,
+    input: { provider: 'APPLE_APP_STORE' | 'GOOGLE_PLAY'; productId: string },
+  ): void {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return;
+    const target = error.meta?.target;
+    const fields = Array.isArray(target) ? target.join(',') : target != null ? String(target) : '';
+    const model = typeof error.meta?.modelName === 'string' ? error.meta.modelName : 'Subscription';
+    this.logger.error(
+      `IAP persist failed code=${error.code} model=${model} target=${fields} provider=${input.provider} productId=${input.productId}`,
+    );
   }
 
   private async syncUserMembership(userId: string): Promise<void> {
