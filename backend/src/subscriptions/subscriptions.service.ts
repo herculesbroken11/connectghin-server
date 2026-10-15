@@ -38,6 +38,9 @@ export class SubscriptionsService {
       status: SubscriptionStatus;
       currentPeriodStart?: string;
       currentPeriodEnd?: string;
+      pendingProductId?: string;
+      pendingBillingCycle?: BillingCycle;
+      pendingEffectiveAt?: string;
       orderId?: string;
       purchaseTokenHash?: string;
       rawResponse?: Record<string, unknown>;
@@ -85,6 +88,13 @@ export class SubscriptionsService {
       rawResponse: input.rawResponse ? (input.rawResponse as Prisma.InputJsonValue) : undefined,
       canceledAt: input.status === SubscriptionStatus.CANCELED ? new Date() : null,
       cancelAtPeriodEnd: input.status === SubscriptionStatus.CANCELED,
+      ...(input.provider === 'APPLE_APP_STORE'
+        ? {
+            pendingStoreProductId: input.pendingProductId ?? null,
+            pendingBillingCycle: input.pendingBillingCycle ?? null,
+            pendingEffectiveAt: input.pendingEffectiveAt ? new Date(input.pendingEffectiveAt) : null,
+          }
+        : {}),
     };
 
     let saved: { id: string };
@@ -296,6 +306,8 @@ function buildIapIdempotencyKey(input: {
   status: SubscriptionStatus;
   currentPeriodStart?: string;
   currentPeriodEnd?: string;
+  pendingProductId?: string;
+  pendingEffectiveAt?: string;
 }): string {
   return [
     'iap',
@@ -306,5 +318,7 @@ function buildIapIdempotencyKey(input: {
     input.status,
     input.currentPeriodStart ?? '-',
     input.currentPeriodEnd ?? '-',
+    input.pendingProductId ?? '-',
+    input.pendingEffectiveAt ?? '-',
   ].join(':');
 }

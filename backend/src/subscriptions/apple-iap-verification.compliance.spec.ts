@@ -15,6 +15,7 @@ import {
   IapVerificationService,
   entitlementFromDecodedAppleTransaction,
   normalizeAppleTransactionId,
+  pendingApplePlan,
   shouldRetryAppleEnvironment,
 } from './iap-verification.service';
 
@@ -26,6 +27,7 @@ type AppleIapMock = {
   getTransactionInfo: jest.Mock;
   getAllSubscriptionStatuses: jest.Mock;
   verifyAndDecodeTransaction: jest.Mock;
+  verifyAndDecodeRenewalInfo: jest.Mock;
 };
 
 jest.mock('@apple/app-store-server-library', () => {
@@ -34,6 +36,7 @@ jest.mock('@apple/app-store-server-library', () => {
     getTransactionInfo: jest.fn(),
     getAllSubscriptionStatuses: jest.fn(),
     verifyAndDecodeTransaction: jest.fn(),
+    verifyAndDecodeRenewalInfo: jest.fn(),
   };
   (globalThis as { __appleIapMock?: AppleIapMock }).__appleIapMock = state;
   return {
@@ -47,6 +50,7 @@ jest.mock('@apple/app-store-server-library', () => {
     ),
     SignedDataVerifier: jest.fn().mockImplementation((_roots: unknown, _online: boolean, environment: string) => ({
       verifyAndDecodeTransaction: (signed: string) => state.verifyAndDecodeTransaction(environment, signed),
+      verifyAndDecodeRenewalInfo: (signed: string) => state.verifyAndDecodeRenewalInfo(environment, signed),
     })),
   };
 });
@@ -101,6 +105,7 @@ describe('Apple subscription verification', () => {
     state.getTransactionInfo.mockReset();
     state.getAllSubscriptionStatuses.mockReset();
     state.verifyAndDecodeTransaction.mockReset();
+    state.verifyAndDecodeRenewalInfo.mockReset();
     state.getAllSubscriptionStatuses.mockResolvedValue({ data: [] });
     state.verifyAndDecodeTransaction.mockImplementation(async (environment: string) => activeDecoded(environment));
     state.getTransactionInfo.mockImplementation(async (environment: string, transactionId: string) => {
@@ -133,7 +138,8 @@ describe('Apple subscription verification', () => {
     );
     expect(appleIapMock().getTransactionInfo).toHaveBeenCalledTimes(1);
     expect(appleIapMock().getTransactionInfo).toHaveBeenCalledWith(Environment.PRODUCTION, TRANSACTION_ID);
-    expect(appleIapMock().getAllSubscriptionStatuses).not.toHaveBeenCalled();
+    expect(appleIapMock().getAllSubscriptionStatuses).toHaveBeenCalledWith(Environment.PRODUCTION, TRANSACTION_ID);
+    expect(verified.pendingProductId).toBeUndefined();
   });
 
   it('no-JWS fallback tries Production then Sandbox when the transaction is not found', async () => {
@@ -245,6 +251,48 @@ describe('Apple subscription verification', () => {
     expect(appleIapMock().getTransactionInfo.mock.calls.map((call) => call[0])).toEqual([Environment.PRODUCTION]);
   });
 
+  it('keeps the in-effect product current when Apple has scheduled the other plan', async () => {
+    const renewalAt = Date.parse('2026-11-15T00:00:00.000Z');
+    appleIapMock().getAllSubscriptionStatuses.mockResolvedValue({
+      environment: Environment.PRODUCTION,
+      bundleId: BUNDLE_ID,
+      data: [
+        {
+          lastTransactions: [
+            {
+              originalTransactionId: TRANSACTION_ID,
+              signedTransactionInfo: 'current-monthly',
+              signedRenewalInfo: 'renewal-yearly',
+            },
+          ],
+        },
+      ],
+    });
+    appleIapMock().verifyAndDecodeTransaction.mockImplementation(async (environment: string, signed: string) => {
+      if (signed === 'current-monthly') return activeDecoded(environment);
+      return activeDecoded(environment, {
+        productId: 'connectghin_yearly',
+        purchaseDate: Date.now() + 86_400_000,
+        expiresDate: Date.now() + 86_400_000 * 400,
+      });
+    });
+    appleIapMock().verifyAndDecodeRenewalInfo.mockResolvedValue({
+      autoRenewProductId: 'connectghin_yearly',
+      autoRenewStatus: 1,
+      renewalDate: renewalAt,
+    });
+
+    const verified = await service.verifyApple(TRANSACTION_ID);
+
+    expect(verified.productId).toBe('connectghin_monthly');
+    expect(verified.pendingProductId).toBe('connectghin_yearly');
+    expect(verified.pendingEffectiveAt).toBe(new Date(renewalAt).toISOString());
+    expect(appleIapMock().verifyAndDecodeRenewalInfo).toHaveBeenCalledWith(
+      Environment.PRODUCTION,
+      'renewal-yearly',
+    );
+  });
+
   it('reads a numeric transaction id from a StoreKit JWS and does not send the JWS as the id', async () => {
     const payload = Buffer.from(JSON.stringify({ transactionId: TRANSACTION_ID })).toString('base64url');
     expect(normalizeAppleTransactionId(`header.${payload}.sig`)).toBe(TRANSACTION_ID);
@@ -284,6 +332,36 @@ describe('Apple subscription verification', () => {
       BUNDLE_ID,
     );
     expect(expired.status).toBe(SubscriptionStatus.EXPIRED);
+
+    const notStarted = entitlementFromDecodedAppleTransaction(
+      {
+        productId: 'connectghin_yearly',
+        bundleId: BUNDLE_ID,
+        environment: 'Sandbox',
+        purchaseDate: Date.now() + 60_000,
+        expiresDate: Date.now() + 120_000,
+      },
+      BUNDLE_ID,
+    );
+    expect(notStarted.status).toBe(SubscriptionStatus.EXPIRED);
+    expect(
+      pendingApplePlan({
+        currentProductId: 'connectghin_monthly',
+        autoRenewProductId: 'connectghin_yearly',
+        autoRenewStatus: 1,
+        renewalDateMs: Date.parse('2026-11-15T00:00:00.000Z'),
+      }),
+    ).toMatchObject({
+      pendingProductId: 'connectghin_yearly',
+      pendingEffectiveAt: '2026-11-15T00:00:00.000Z',
+    });
+    expect(
+      pendingApplePlan({
+        currentProductId: 'connectghin_monthly',
+        autoRenewProductId: 'connectghin_yearly',
+        autoRenewStatus: 0,
+      }),
+    ).toBeNull();
 
     appleIapMock().getTransactionInfo.mockRejectedValue(new APIException(404, 4040010, null));
     await expect(service.verifyApple(TRANSACTION_ID, 'not-a-jws')).rejects.toBeInstanceOf(BadRequestException);

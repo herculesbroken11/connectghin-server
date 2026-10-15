@@ -400,6 +400,10 @@ model Subscription {
   expiryDate           DateTime?
   cancelAtPeriodEnd    Boolean            @default(false)
   canceledAt           DateTime?
+  /// Next Apple product when a same-level crossgrade waits for the renewal date.
+  pendingStoreProductId String?
+  pendingBillingCycle   BillingCycle?
+  pendingEffectiveAt    DateTime?
   /// Last raw store verification payload (Google Play API response).
   rawResponse          Json?
   createdAt            DateTime           @default(now())

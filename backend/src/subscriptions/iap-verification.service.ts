@@ -31,6 +31,10 @@ type VerifiedEntitlement = {
   status: SubscriptionStatus;
   currentPeriodStart?: string;
   currentPeriodEnd?: string;
+  /** Set only from a verified Apple renewal JWS when the next product differs. */
+  pendingProductId?: string;
+  pendingBillingCycle?: BillingCycle;
+  pendingEffectiveAt?: string;
   orderId?: string;
   purchaseTokenHash?: string;
   rawResponse?: Record<string, unknown>;
@@ -334,10 +338,29 @@ export class IapVerificationService {
     route: AppleVerifyRoute,
   ): Promise<VerifiedEntitlement> {
     const signed = await this.lookupSignedTransaction(client, environment, transactionId, route);
-    const entitlement = await this.entitlementFromSignedTransaction(signed, environment, bundleId, route);
-    if (isGrantedAppleStatus(entitlement.status)) {
-      this.appleLog('log', this.verifiedRoute(route, environment), environment, entitlement.productId, 'active', 200, 'none');
-      return entitlement;
+    const lookedUp = await this.entitlementFromSignedTransaction(signed, environment, bundleId, route);
+    const resolved = await this.resolveCurrentAndPendingPlan(
+      client,
+      environment,
+      transactionId,
+      bundleId,
+      route,
+      lookedUp,
+    );
+    if (resolved && isGrantedAppleStatus(resolved.status)) {
+      this.appleLog('log', this.verifiedRoute(route, environment), environment, resolved.productId, 'active', 200, 'none');
+      if (resolved.pendingProductId) {
+        this.appleLog(
+          'log',
+          this.verifiedRoute(route, environment),
+          environment,
+          resolved.pendingProductId,
+          'renewal_scheduled',
+          200,
+          'none',
+        );
+      }
+      return resolved;
     }
 
     const renewed = await this.activeEntitlementFromSubscriptionStatus(
@@ -346,7 +369,7 @@ export class IapVerificationService {
       transactionId,
       bundleId,
       route,
-      entitlement.externalSubscriptionId,
+      lookedUp.externalSubscriptionId,
     );
     if (renewed) return renewed;
 
@@ -354,7 +377,7 @@ export class IapVerificationService {
       'log',
       this.verifiedRoute(route, environment),
       environment,
-      entitlement.productId,
+      lookedUp.productId,
       'expired',
       200,
       'none',
@@ -504,6 +527,107 @@ export class IapVerificationService {
     return null;
   }
 
+  /**
+   * Current product comes from the transaction that is already in effect.
+   * A different autoRenewProductId is only a scheduled crossgrade.
+   * Renewal fields are ignored when the status call or renewal JWS cannot be verified.
+   */
+  private async resolveCurrentAndPendingPlan(
+    client: AppStoreServerAPIClient,
+    environment: Environment,
+    transactionId: string,
+    bundleId: string,
+    route: AppleVerifyRoute,
+    lookedUp: VerifiedEntitlement,
+  ): Promise<VerifiedEntitlement | null> {
+    let response: StatusResponse;
+    try {
+      response = await client.getAllSubscriptionStatuses(transactionId);
+      this.appleLog('log', this.verifiedRoute(route, environment), environment, 'unknown', 'response', 200, 'none');
+    } catch (error) {
+      if (error instanceof APIException) {
+        this.appleLog(
+          'warn',
+          route,
+          environment,
+          'unknown',
+          'failure',
+          error.httpStatusCode,
+          appleApiErrorNumber(error.apiError) ?? 'none',
+        );
+      } else {
+        this.appleLog('warn', route, environment, 'unknown', 'failure');
+      }
+      return isGrantedAppleStatus(lookedUp.status) ? lookedUp : null;
+    }
+    if (response.bundleId && response.bundleId !== bundleId) {
+      throw new BadRequestException('Apple verification failed: bundleId mismatch');
+    }
+    if (response.environment && response.environment !== environment) {
+      throw new VerificationException(VerificationStatus.INVALID_ENVIRONMENT);
+    }
+
+    let current = isGrantedAppleStatus(lookedUp.status) ? lookedUp : null;
+    let renewalSigned: string | undefined;
+    for (const group of response.data ?? []) {
+      for (const item of group.lastTransactions ?? []) {
+        if (
+          lookedUp.externalSubscriptionId &&
+          item.originalTransactionId &&
+          item.originalTransactionId !== lookedUp.externalSubscriptionId
+        ) {
+          continue;
+        }
+        if (!renewalSigned && item.signedRenewalInfo?.trim()) {
+          renewalSigned = item.signedRenewalInfo.trim();
+        }
+        const signed = item.signedTransactionInfo?.trim();
+        if (!signed) continue;
+        try {
+          const entitlement = await this.entitlementFromSignedTransaction(signed, environment, bundleId, route);
+          if (!isGrantedAppleStatus(entitlement.status)) continue;
+          current = entitlement;
+          if (item.signedRenewalInfo?.trim()) renewalSigned = item.signedRenewalInfo.trim();
+        } catch (error) {
+          if (error instanceof BadRequestException) throw error;
+          this.appleLog('warn', this.verifiedRoute(route, environment), environment, 'unknown', 'failure', 200, 'none');
+        }
+      }
+    }
+    if (!current) return null;
+
+    const pending = await this.pendingPlanFromRenewalJws(renewalSigned, environment, route, current.productId);
+    return {
+      ...current,
+      pendingProductId: pending?.pendingProductId,
+      pendingBillingCycle: pending?.pendingBillingCycle,
+      pendingEffectiveAt: pending ? pending.pendingEffectiveAt ?? current.currentPeriodEnd : undefined,
+    };
+  }
+
+  private async pendingPlanFromRenewalJws(
+    signedRenewalInfo: string | undefined,
+    environment: Environment,
+    route: AppleVerifyRoute,
+    currentProductId: string,
+  ): Promise<ReturnType<typeof pendingApplePlan>> {
+    if (!signedRenewalInfo) return null;
+    try {
+      const decoded = (await this.verifierFor(environment, route).verifyAndDecodeRenewalInfo(
+        signedRenewalInfo,
+      )) as unknown as Record<string, unknown>;
+      return pendingApplePlan({
+        currentProductId,
+        autoRenewProductId: asString(decoded.autoRenewProductId),
+        autoRenewStatus: asNumber(decoded.autoRenewStatus),
+        renewalDateMs: asNumber(decoded.renewalDate),
+      });
+    } catch {
+      this.appleLog('warn', this.verifiedRoute(route, environment), environment, currentProductId, 'failure', 200, 'none');
+      return null;
+    }
+  }
+
   private async getGoogleAccessToken(): Promise<string> {
     const credentials = this.loadGoogleServiceAccountCredentials();
     const privateKey = createPrivateKey(normalizePem(credentials.privateKey));
@@ -646,6 +770,25 @@ function toAppleBillingError(error: unknown): BadRequestException {
   return new BadRequestException('Apple verification failed');
 }
 
+/** A different verified autoRenewProductId is a scheduled plan, not the current one. */
+export function pendingApplePlan(input: {
+  currentProductId: string;
+  autoRenewProductId?: string | null;
+  autoRenewStatus?: number | null;
+  renewalDateMs?: number | null;
+}): { pendingProductId: string; pendingBillingCycle: BillingCycle; pendingEffectiveAt?: string } | null {
+  const next = input.autoRenewProductId?.trim() ?? '';
+  if (!next || next === input.currentProductId) return null;
+  if (input.autoRenewStatus === 0) return null;
+  if (!(APPLE_SUBSCRIPTION_PRODUCT_IDS as readonly string[]).includes(next)) return null;
+  return {
+    pendingProductId: next,
+    pendingBillingCycle: inferBillingCycle(next),
+    pendingEffectiveAt:
+      input.renewalDateMs != null ? new Date(input.renewalDateMs).toISOString() : undefined,
+  };
+}
+
 export function isGrantedAppleStatus(status: SubscriptionStatus): boolean {
   return status === SubscriptionStatus.ACTIVE || status === SubscriptionStatus.PAST_DUE;
 }
@@ -667,7 +810,8 @@ export function entitlementFromDecodedAppleTransaction(
   if (!expectedBundleId || !bundleId || bundleId !== expectedBundleId) {
     throw new BadRequestException('Apple verification failed: bundleId mismatch');
   }
-  const active = !revoked && expiresMs != null && expiresMs > now;
+  const started = purchaseMs == null || purchaseMs <= now;
+  const active = !revoked && started && expiresMs != null && expiresMs > now;
   return {
     provider: 'APPLE_APP_STORE',
     productId,
